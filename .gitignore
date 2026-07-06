@@ -1,0 +1,10 @@
+node_modules/
+frontend/node_modules/
+internal/static/dist/assets/
+dist/
+.DS_Store
+*.log
+server
+.env
+.env.*
+!.env.example

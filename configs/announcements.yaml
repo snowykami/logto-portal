@@ -1,0 +1,26 @@
+- id: yuki-id-welcome
+  title: Yuki ID Portal 已开放
+  content: 轻雪账号门户将逐步整合资料、安全、应用入口和帮助支持能力。
+  severity: info
+  target_roles: []
+  target_organizations: []
+  target_users: []
+  pinned: true
+- id: passport-migration
+  title: Liteyuki Passport 迁移提醒
+  content: 请检查邮箱、头像和社交账号绑定状态，建议至少保留一种可用的备用登录方式。
+  severity: warning
+  target_roles:
+    - liteyuki-account-user
+  target_organizations: []
+  target_users: []
+  pinned: true
+- id: beta-notice
+  title: 内测用户功能说明
+  content: 内测用户可以优先体验组织权限说明和安全中心改进。
+  severity: info
+  target_roles:
+    - liteyuki-beta-tester
+  target_organizations: []
+  target_users: []
+  pinned: false
