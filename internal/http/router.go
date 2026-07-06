@@ -22,6 +22,7 @@ type Dependencies struct {
 	State         *auth.StateStore
 	OIDC          *auth.OIDCClient
 	Account       *logto.AccountClient
+	Management    *logto.ManagementClient
 	Catalog       []portal.AppCatalogItem
 	Announcements []portal.Announcement
 	Static        embed.FS

@@ -31,7 +31,7 @@ func NewOIDCClient(ctx context.Context, cfg config.Config) (*OIDCClient, error) 
 			oidc.ScopeOpenID,
 			"profile",
 			"email",
-			"roles",
+			"role",
 			"urn:logto:scope:organizations",
 			"urn:logto:scope:organization_roles",
 		},

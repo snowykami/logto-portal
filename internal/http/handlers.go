@@ -137,6 +137,14 @@ func (s *Server) markAnnouncementRead(c *gin.Context) {
 
 func (s *Server) updateProfile(c *gin.Context) {
 	session := mustSession(c)
+	if s.deps.Management == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":   "management_api_not_configured",
+			"message": "LOGTO_MANAGEMENT_CLIENT_ID and LOGTO_MANAGEMENT_CLIENT_SECRET are required.",
+		})
+		return
+	}
+
 	var request struct {
 		Name              *string `json:"name"`
 		Picture           *string `json:"picture"`
@@ -147,15 +155,15 @@ func (s *Server) updateProfile(c *gin.Context) {
 		return
 	}
 
-	update := logto.ProfileUpdate{
+	update := logto.ManagementProfileUpdate{
 		Name:     request.Name,
 		Username: request.PreferredUsername,
 		Avatar:   request.Picture,
 	}
-	result, err := s.deps.Account.UpdateProfile(c.Request.Context(), session.AccessToken, update)
+	result, err := s.deps.Management.UpdateUser(c.Request.Context(), session.User.Sub, update)
 	if err != nil {
 		s.deps.Logger.Warn("profile update failed", "error", err)
-		c.JSON(http.StatusBadGateway, gin.H{"error": "account_api_failed"})
+		c.JSON(http.StatusBadGateway, gin.H{"error": "management_api_failed"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"profile": result})

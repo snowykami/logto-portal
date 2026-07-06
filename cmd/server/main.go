@@ -54,6 +54,19 @@ func main() {
 	}
 
 	accountClient := logto.NewAccountClient(cfg.LogtoAPIBaseURL)
+	var managementClient *logto.ManagementClient
+	if cfg.ManagementAPIEnabled() {
+		managementClient = logto.NewManagementClient(logto.ManagementConfig{
+			APIBaseURL:   cfg.LogtoAPIBaseURL,
+			Issuer:       cfg.LogtoIssuer,
+			ClientID:     cfg.ManagementClientID,
+			ClientSecret: cfg.ManagementClientSecret,
+			Resource:     cfg.ManagementAPIResource,
+			Scope:        cfg.ManagementAPIScope,
+		})
+	} else {
+		logger.Warn("Logto Management API is not configured; profile updates are disabled")
+	}
 	router := portalhttp.NewRouter(portalhttp.Dependencies{
 		Config:        cfg,
 		Logger:        logger,
@@ -61,6 +74,7 @@ func main() {
 		State:         stateStore,
 		OIDC:          oidcClient,
 		Account:       accountClient,
+		Management:    managementClient,
 		Catalog:       catalog,
 		Announcements: announcements,
 		Static:        static.FS(),

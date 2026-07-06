@@ -16,21 +16,11 @@ type AccountClient struct {
 	client  *http.Client
 }
 
-type ProfileUpdate struct {
-	Username *string `json:"username,omitempty"`
-	Name     *string `json:"name,omitempty"`
-	Avatar   *string `json:"avatar,omitempty"`
-}
-
 func NewAccountClient(baseURL string) *AccountClient {
 	return &AccountClient{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		client:  &http.Client{Timeout: 10 * time.Second},
 	}
-}
-
-func (c *AccountClient) UpdateProfile(ctx context.Context, accessToken string, update ProfileUpdate) (map[string]any, error) {
-	return c.doJSON(ctx, http.MethodPatch, "/api/my-account", accessToken, update)
 }
 
 func (c *AccountClient) ListSessions(ctx context.Context, accessToken string) (map[string]any, error) {

@@ -30,6 +30,7 @@ import type { Announcement, AppCatalogItem, PortalData, User } from './types';
 import { Badge } from './components/ui/badge';
 import { Button } from './components/ui/button';
 import { Card } from './components/ui/card';
+import { useConfirm } from './components/ui/confirm-dialog';
 import { Input } from './components/ui/input';
 
 type Page = 'dashboard' | 'profile' | 'security' | 'applications' | 'organizations' | 'notifications' | 'help';
@@ -252,6 +253,7 @@ function Dashboard({ data, navigate }: { data: PortalData; navigate: (page: Page
 }
 
 function Profile({ user, reload }: { user: User; reload: () => Promise<void> }) {
+  const confirm = useConfirm();
   const [name, setName] = useState(user.name);
   const [username, setUsername] = useState(user.preferredUsername);
   const [picture, setPicture] = useState(user.picture);
@@ -260,7 +262,12 @@ function Profile({ user, reload }: { user: User; reload: () => Promise<void> }) 
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!window.confirm('确认提交资料修改？')) {
+    const confirmed = await confirm({
+      title: '确认修改资料',
+      description: '昵称、用户名和头像会通过后端提交到 Logto Management API，并更新当前账号资料。',
+      confirmText: '提交修改',
+    });
+    if (!confirmed) {
       return;
     }
     setSaving(true);
@@ -274,10 +281,10 @@ function Profile({ user, reload }: { user: User; reload: () => Promise<void> }) 
           picture,
         }),
       });
-      setMessage('资料已提交到 Logto Account API。');
+      setMessage('资料已通过 Logto Management API 提交。');
       await reload();
     } catch {
-      setMessage('资料更新失败，请检查 Logto Account API 权限配置。');
+      setMessage('资料更新失败，请检查 Logto Management API 权限配置。');
     } finally {
       setSaving(false);
     }
@@ -467,8 +474,17 @@ function ApplicationTile({ app }: { app: AppCatalogItem }) {
 }
 
 function LogoutButton({ global }: { global: boolean }) {
+  const confirm = useConfirm();
+
   async function run() {
-    const confirmed = window.confirm(global ? '确认退出 Yuki ID 中心登录态？' : '确认退出当前门户？');
+    const confirmed = await confirm({
+      title: global ? '退出 Yuki ID' : '退出当前门户',
+      description: global
+        ? '这会清除当前门户会话，并跳转到 Logto 退出 Yuki ID 中心登录态。'
+        : '这只会清除当前门户的登录会话，不会退出 Yuki ID 中心。',
+      confirmText: global ? '退出 Yuki ID' : '退出门户',
+      variant: global ? 'danger' : 'default',
+    });
     if (!confirmed) {
       return;
     }
@@ -628,7 +644,7 @@ function displayName(user: User) {
 function pageSubtitle(page: Page) {
   const copy: Record<Page, string> = {
     dashboard: '账号资料、安全状态、应用入口和公告汇总。',
-    profile: '基础资料由 Logto Account API 统一管理。',
+    profile: '基础资料由后端通过 Logto Management API 更新。',
     security: '密码、MFA、社交账号和活跃会话。',
     applications: '按角色和组织展示轻雪应用访问状态。',
     organizations: '解释当前 roles、organizations 和 organization_roles。',

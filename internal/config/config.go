@@ -8,19 +8,23 @@ import (
 )
 
 type Config struct {
-	Port                string
-	AppBaseURL          string
-	LogtoIssuer         string
-	LogtoAPIBaseURL     string
-	LogtoClientID       string
-	LogtoClientSecret   string
-	SessionCookieName   string
-	CookieSecure        bool
-	AppCatalogPath      string
-	AnnouncementsPath   string
-	SupportEmail        string
-	DevAuthEnabled      bool
-	AllowedRedirectURIs map[string]struct{}
+	Port                   string
+	AppBaseURL             string
+	LogtoIssuer            string
+	LogtoAPIBaseURL        string
+	LogtoClientID          string
+	LogtoClientSecret      string
+	ManagementClientID     string
+	ManagementClientSecret string
+	ManagementAPIResource  string
+	ManagementAPIScope     string
+	SessionCookieName      string
+	CookieSecure           bool
+	AppCatalogPath         string
+	AnnouncementsPath      string
+	SupportEmail           string
+	DevAuthEnabled         bool
+	AllowedRedirectURIs    map[string]struct{}
 }
 
 func Load() (Config, error) {
@@ -36,19 +40,23 @@ func Load() (Config, error) {
 	}
 
 	cfg := Config{
-		Port:                env("PORT", "8080"),
-		AppBaseURL:          appBaseURL,
-		LogtoIssuer:         logtoIssuer,
-		LogtoAPIBaseURL:     strings.TrimRight(logtoAPIBaseURL, "/"),
-		LogtoClientID:       os.Getenv("LOGTO_CLIENT_ID"),
-		LogtoClientSecret:   os.Getenv("LOGTO_CLIENT_SECRET"),
-		SessionCookieName:   env("SESSION_COOKIE_NAME", "yp_session"),
-		CookieSecure:        envBool("COOKIE_SECURE", strings.HasPrefix(appBaseURL, "https://")),
-		AppCatalogPath:      env("APP_CATALOG_PATH", "configs/app-catalog.yaml"),
-		AnnouncementsPath:   env("ANNOUNCEMENTS_PATH", "configs/announcements.yaml"),
-		SupportEmail:        env("SUPPORT_EMAIL", "contact@liteyuki.org"),
-		DevAuthEnabled:      envBool("PORTAL_DEV_AUTH", false),
-		AllowedRedirectURIs: allowedRedirects,
+		Port:                   env("PORT", "8080"),
+		AppBaseURL:             appBaseURL,
+		LogtoIssuer:            logtoIssuer,
+		LogtoAPIBaseURL:        strings.TrimRight(logtoAPIBaseURL, "/"),
+		LogtoClientID:          os.Getenv("LOGTO_CLIENT_ID"),
+		LogtoClientSecret:      os.Getenv("LOGTO_CLIENT_SECRET"),
+		ManagementClientID:     os.Getenv("LOGTO_MANAGEMENT_CLIENT_ID"),
+		ManagementClientSecret: os.Getenv("LOGTO_MANAGEMENT_CLIENT_SECRET"),
+		ManagementAPIResource:  env("LOGTO_MANAGEMENT_API_RESOURCE", "https://default.logto.app/api"),
+		ManagementAPIScope:     env("LOGTO_MANAGEMENT_API_SCOPE", "all"),
+		SessionCookieName:      env("SESSION_COOKIE_NAME", "yp_session"),
+		CookieSecure:           envBool("COOKIE_SECURE", strings.HasPrefix(appBaseURL, "https://")),
+		AppCatalogPath:         env("APP_CATALOG_PATH", "configs/app-catalog.yaml"),
+		AnnouncementsPath:      env("ANNOUNCEMENTS_PATH", "configs/announcements.yaml"),
+		SupportEmail:           env("SUPPORT_EMAIL", "contact@liteyuki.org"),
+		DevAuthEnabled:         envBool("PORTAL_DEV_AUTH", false),
+		AllowedRedirectURIs:    allowedRedirects,
 	}
 
 	if _, err := url.ParseRequestURI(cfg.AppBaseURL); err != nil {
@@ -63,6 +71,10 @@ func Load() (Config, error) {
 
 func (c Config) OIDCEnabled() bool {
 	return c.LogtoClientID != "" && c.LogtoClientSecret != ""
+}
+
+func (c Config) ManagementAPIEnabled() bool {
+	return c.ManagementClientID != "" && c.ManagementClientSecret != "" && c.ManagementAPIResource != ""
 }
 
 func (c Config) RedirectURI() string {

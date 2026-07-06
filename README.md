@@ -16,10 +16,17 @@ Required Logto settings:
 
 - Redirect URI: `http://localhost:8080/auth/callback`
 - Post logout redirect URI: `http://localhost:8080/`
-- Scopes: `openid profile email roles urn:logto:scope:organizations urn:logto:scope:organization_roles`
+- Scopes: `openid profile email role urn:logto:scope:organizations urn:logto:scope:organization_roles`
 
 Set `LOGTO_CLIENT_ID` and `LOGTO_CLIENT_SECRET` before using `/auth/login`.
+Set `LOGTO_MANAGEMENT_CLIENT_ID`, `LOGTO_MANAGEMENT_CLIENT_SECRET`, and
+`LOGTO_MANAGEMENT_API_RESOURCE` before allowing profile updates.
 For local UI preview without Logto credentials, run with `PORTAL_DEV_AUTH=true`.
+
+The Management API client should be a Logto Machine-to-Machine app with a role
+that grants the required Management API permission, for example `all` for the
+first deployment. The token is only requested by the Go BFF and is never returned
+to the browser.
 
 ## Production Shape
 
