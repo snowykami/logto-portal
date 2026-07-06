@@ -4,7 +4,6 @@ internal/static/dist/assets/
 dist/
 .DS_Store
 *.log
-server
 .env
 .env.*
 !.env.example
