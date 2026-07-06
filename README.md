@@ -28,6 +28,12 @@ that grants the required Management API permission, for example `all` for the
 first deployment. The token is only requested by the Go BFF and is never returned
 to the browser.
 
+When Management API is configured, `/api/app-catalog` fetches applications from
+Logto via `GET /api/applications`. `configs/app-catalog.yaml` is still used as a
+safe local overlay for portal URLs, icons, ordering, and role / organization
+access rules. If Management API is unavailable, the backend falls back to the
+static YAML catalog.
+
 ## Production Shape
 
 ```text

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -42,6 +43,21 @@ type ManagementProfileUpdate struct {
 	Avatar   *string `json:"avatar,omitempty"`
 }
 
+type ManagementApplication struct {
+	ID                   string                 `json:"id"`
+	Name                 string                 `json:"name"`
+	Description          string                 `json:"description"`
+	Type                 string                 `json:"type"`
+	OidcClientMetadata   map[string]any         `json:"oidcClientMetadata"`
+	CustomClientMetadata map[string]any         `json:"customClientMetadata"`
+	ProtectedAppMetadata map[string]any         `json:"protectedAppMetadata"`
+	CustomData           map[string]any         `json:"customData"`
+	IsThirdParty         bool                   `json:"isThirdParty"`
+	CreatedAt            int64                  `json:"createdAt"`
+	UpdatedAt            int64                  `json:"updatedAt"`
+	AdditionalProperties map[string]interface{} `json:"-"`
+}
+
 func NewManagementClient(cfg ManagementConfig) *ManagementClient {
 	return &ManagementClient{
 		apiBaseURL:   strings.TrimRight(cfg.APIBaseURL, "/"),
@@ -60,6 +76,37 @@ func (c *ManagementClient) UpdateUser(ctx context.Context, userID string, update
 		return nil, err
 	}
 	return c.doJSON(ctx, http.MethodPatch, "/api/users/"+url.PathEscape(userID), token, update)
+}
+
+func (c *ManagementClient) ListApplications(ctx context.Context) ([]ManagementApplication, error) {
+	token, err := c.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	const pageSize = 100
+	apps := []ManagementApplication{}
+	for page := 1; ; page++ {
+		values := url.Values{}
+		values.Set("page", strconv.Itoa(page))
+		values.Set("page_size", strconv.Itoa(pageSize))
+
+		data, err := c.doRawJSON(ctx, http.MethodGet, "/api/applications?"+values.Encode(), token, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		pageApps, err := decodeApplications(data)
+		if err != nil {
+			return nil, err
+		}
+		apps = append(apps, pageApps...)
+		if len(pageApps) < pageSize {
+			break
+		}
+	}
+
+	return apps, nil
 }
 
 func (c *ManagementClient) token(ctx context.Context) (string, error) {
@@ -120,19 +167,40 @@ func (c *ManagementClient) token(ctx context.Context) (string, error) {
 }
 
 func (c *ManagementClient) doJSON(ctx context.Context, method, path, accessToken string, body any) (map[string]any, error) {
-	payload, err := json.Marshal(body)
+	data, err := c.doRawJSON(ctx, method, path, accessToken, body)
 	if err != nil {
 		return nil, err
 	}
+	if len(data) == 0 {
+		return map[string]any{}, nil
+	}
 
-	req, err := http.NewRequestWithContext(ctx, method, c.apiBaseURL+path, bytes.NewReader(payload))
+	var result map[string]any
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (c *ManagementClient) doRawJSON(ctx context.Context, method, path, accessToken string, body any) ([]byte, error) {
+	var reader io.Reader
+	if body != nil {
+		payload, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		reader = bytes.NewReader(payload)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, c.apiBaseURL+path, reader)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+accessToken)
-	req.Header.Set("Content-Type", "application/json")
-
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return nil, err
@@ -146,13 +214,20 @@ func (c *ManagementClient) doJSON(ctx context.Context, method, path, accessToken
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("logto management api returned %s", resp.Status)
 	}
-	if len(data) == 0 {
-		return map[string]any{}, nil
+	return data, nil
+}
+
+func decodeApplications(data []byte) ([]ManagementApplication, error) {
+	var direct []ManagementApplication
+	if err := json.Unmarshal(data, &direct); err == nil {
+		return direct, nil
 	}
 
-	var result map[string]any
-	if err := json.Unmarshal(data, &result); err != nil {
+	var wrapped struct {
+		Data []ManagementApplication `json:"data"`
+	}
+	if err := json.Unmarshal(data, &wrapped); err != nil {
 		return nil, err
 	}
-	return result, nil
+	return wrapped.Data, nil
 }

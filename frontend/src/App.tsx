@@ -452,19 +452,19 @@ function ApplicationTile({ app }: { app: AppCatalogItem }) {
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
             <h3 className="truncate font-semibold">{app.name}</h3>
-            <Badge tone={app.accessible ? 'ok' : 'warn'}>{app.accessible ? '可访问' : '受限'}</Badge>
+            <Badge tone={app.accessible && app.url ? 'ok' : 'warn'}>{app.accessible && app.url ? '可访问' : '受限'}</Badge>
           </div>
           <p className="mt-2 min-h-10 text-sm text-muted-foreground">{app.description}</p>
           <div className="mt-3 flex flex-wrap gap-2">
             {(app.requiredRoles ?? []).slice(0, 2).map((role) => <Badge key={role}>{role}</Badge>)}
           </div>
           <a
-            className={clsx('mt-4 inline-flex h-9 items-center gap-2 rounded-md px-3 text-sm font-medium', app.accessible ? 'bg-primary text-primary-foreground' : 'pointer-events-none bg-muted text-muted-foreground')}
+            className={clsx('mt-4 inline-flex h-9 items-center gap-2 rounded-md px-3 text-sm font-medium', app.accessible && app.url ? 'bg-primary text-primary-foreground' : 'pointer-events-none bg-muted text-muted-foreground')}
             href={app.url}
             target="_blank"
             rel="noreferrer"
           >
-            打开
+            {app.url ? '打开' : '未配置入口'}
             <ExternalLink size={15} />
           </a>
         </div>

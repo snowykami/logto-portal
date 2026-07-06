@@ -1,9 +1,13 @@
 package portal
 
 import (
+	"net/url"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/liteyuki/yuki-id-portal/internal/auth"
+	"github.com/liteyuki/yuki-id-portal/internal/logto"
 )
 
 type AppCatalogItem struct {
@@ -12,10 +16,12 @@ type AppCatalogItem struct {
 	Description           string   `json:"description" yaml:"description"`
 	URL                   string   `json:"url" yaml:"url"`
 	Icon                  string   `json:"icon" yaml:"icon"`
+	Type                  string   `json:"type" yaml:"type"`
 	RequiredRoles         []string `json:"requiredRoles" yaml:"required_roles"`
 	RequiredOrganizations []string `json:"requiredOrganizations" yaml:"required_organizations"`
 	Enabled               bool     `json:"enabled" yaml:"enabled"`
 	SortOrder             int      `json:"sortOrder" yaml:"sort_order"`
+	Source                string   `json:"source" yaml:"source"`
 }
 
 type AppCatalogResponseItem struct {
@@ -53,6 +59,46 @@ func FilterApps(apps []AppCatalogItem, user auth.User) []AppCatalogResponseItem 
 	return result
 }
 
+func MergeManagedApps(managed []logto.ManagementApplication, overrides []AppCatalogItem) []AppCatalogItem {
+	overrideByID := make(map[string]AppCatalogItem, len(overrides))
+	overrideByName := make(map[string]AppCatalogItem, len(overrides))
+	for _, item := range overrides {
+		overrideByID[item.ID] = item
+		overrideByName[normalizeAppKey(item.Name)] = item
+	}
+
+	result := make([]AppCatalogItem, 0, len(managed)+len(overrides))
+	seenOverrides := map[string]struct{}{}
+	for index, app := range managed {
+		item := appFromManagement(app, index)
+		override, ok := overrideByID[item.ID]
+		if !ok {
+			override, ok = overrideByName[normalizeAppKey(item.Name)]
+		}
+		if ok {
+			seenOverrides[override.ID] = struct{}{}
+			item = mergeAppOverride(item, override)
+		}
+		result = append(result, item)
+	}
+
+	for _, item := range overrides {
+		if _, seen := seenOverrides[item.ID]; seen {
+			continue
+		}
+		item.Source = "static"
+		result = append(result, item)
+	}
+
+	sort.SliceStable(result, func(i, j int) bool {
+		if result[i].SortOrder != result[j].SortOrder {
+			return result[i].SortOrder < result[j].SortOrder
+		}
+		return strings.ToLower(result[i].Name) < strings.ToLower(result[j].Name)
+	})
+	return result
+}
+
 func FilterAnnouncements(items []Announcement, user auth.User, now time.Time) []Announcement {
 	result := make([]Announcement, 0, len(items))
 	for _, item := range items {
@@ -87,6 +133,110 @@ func canAccessApp(app AppCatalogItem, user auth.User) (bool, []string) {
 		reasons = append(reasons, "missing_required_organization")
 	}
 	return len(reasons) == 0, reasons
+}
+
+func appFromManagement(app logto.ManagementApplication, index int) AppCatalogItem {
+	return AppCatalogItem{
+		ID:          app.ID,
+		Name:        fallbackString(app.Name, app.ID),
+		Description: app.Description,
+		URL:         appURL(app),
+		Icon:        "workflow",
+		Type:        app.Type,
+		Enabled:     true,
+		SortOrder:   10_000 + index,
+		Source:      "management",
+	}
+}
+
+func mergeAppOverride(base AppCatalogItem, override AppCatalogItem) AppCatalogItem {
+	if override.ID != "" {
+		base.ID = override.ID
+	}
+	if override.Name != "" {
+		base.Name = override.Name
+	}
+	if override.Description != "" {
+		base.Description = override.Description
+	}
+	if override.URL != "" {
+		base.URL = override.URL
+	}
+	if override.Icon != "" {
+		base.Icon = override.Icon
+	}
+	if override.Type != "" {
+		base.Type = override.Type
+	}
+	if override.RequiredRoles != nil {
+		base.RequiredRoles = override.RequiredRoles
+	}
+	if override.RequiredOrganizations != nil {
+		base.RequiredOrganizations = override.RequiredOrganizations
+	}
+	base.Enabled = override.Enabled
+	if override.SortOrder != 0 {
+		base.SortOrder = override.SortOrder
+	}
+	base.Source = "management"
+	return base
+}
+
+func appURL(app logto.ManagementApplication) string {
+	if value := stringMapValue(app.ProtectedAppMetadata, "origin"); value != "" {
+		return value
+	}
+	if value := stringMapValue(app.CustomData, "portalUrl"); value != "" {
+		return value
+	}
+	if value := stringMapValue(app.CustomClientMetadata, "portalUrl"); value != "" {
+		return value
+	}
+	if uri := firstStringSliceValue(app.OidcClientMetadata, "redirectUris"); uri != "" {
+		parsed, err := url.Parse(uri)
+		if err == nil && parsed.Scheme != "" && parsed.Host != "" {
+			return parsed.Scheme + "://" + parsed.Host
+		}
+	}
+	return ""
+}
+
+func stringMapValue(values map[string]any, key string) string {
+	value, _ := values[key].(string)
+	return value
+}
+
+func firstStringSliceValue(values map[string]any, key string) string {
+	value, ok := values[key]
+	if !ok {
+		return ""
+	}
+	switch typed := value.(type) {
+	case []string:
+		if len(typed) == 0 {
+			return ""
+		}
+		return typed[0]
+	case []any:
+		if len(typed) == 0 {
+			return ""
+		}
+		text, _ := typed[0].(string)
+		return text
+	default:
+		return ""
+	}
+}
+
+func fallbackString(value, fallback string) string {
+	if value != "" {
+		return value
+	}
+	return fallback
+}
+
+func normalizeAppKey(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
 }
 
 func matchesAudience(required []string, actual []string) bool {

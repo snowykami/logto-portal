@@ -116,8 +116,20 @@ func (s *Server) permissions(c *gin.Context) {
 
 func (s *Server) appCatalog(c *gin.Context) {
 	user := mustSession(c).User
+	catalog := s.deps.Catalog
+	source := "static"
+	if s.deps.Management != nil {
+		managedApps, err := s.deps.Management.ListApplications(c.Request.Context())
+		if err != nil {
+			s.deps.Logger.Warn("management applications fetch failed; falling back to static catalog", "error", err)
+		} else {
+			catalog = portal.MergeManagedApps(managedApps, s.deps.Catalog)
+			source = "management"
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{
-		"applications": portal.FilterApps(s.deps.Catalog, user),
+		"applications": portal.FilterApps(catalog, user),
+		"source":       source,
 	})
 }
 
