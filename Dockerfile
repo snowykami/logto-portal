@@ -25,6 +25,7 @@ ENV PORT=8080 \
 	APP_BASE_URL=http://localhost:8080 \
 	LOGTO_ISSUER=https://auth.liteyuki.org/oidc \
 	LOGTO_API_BASE_URL=https://auth.liteyuki.org \
+	LOGTO_ACCOUNT_BASE_URL=https://auth.liteyuki.org/account \
 	LOGTO_MANAGEMENT_API_RESOURCE=https://default.logto.app/api \
 	LOGTO_MANAGEMENT_API_SCOPE=all \
 	SESSION_COOKIE_NAME=yp_session \

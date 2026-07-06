@@ -67,8 +67,7 @@ func MergeManagedApps(managed []logto.ManagementApplication, overrides []AppCata
 		overrideByName[normalizeAppKey(item.Name)] = item
 	}
 
-	result := make([]AppCatalogItem, 0, len(managed)+len(overrides))
-	seenOverrides := map[string]struct{}{}
+	result := make([]AppCatalogItem, 0, len(managed))
 	for index, app := range managed {
 		item := appFromManagement(app, index)
 		override, ok := overrideByID[item.ID]
@@ -76,17 +75,8 @@ func MergeManagedApps(managed []logto.ManagementApplication, overrides []AppCata
 			override, ok = overrideByName[normalizeAppKey(item.Name)]
 		}
 		if ok {
-			seenOverrides[override.ID] = struct{}{}
 			item = mergeAppOverride(item, override)
 		}
-		result = append(result, item)
-	}
-
-	for _, item := range overrides {
-		if _, seen := seenOverrides[item.ID]; seen {
-			continue
-		}
-		item.Source = "static"
 		result = append(result, item)
 	}
 

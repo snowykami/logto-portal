@@ -35,6 +35,36 @@ import { Input } from './components/ui/input';
 
 type Page = 'dashboard' | 'profile' | 'security' | 'applications' | 'organizations' | 'notifications' | 'help';
 type Theme = 'light' | 'dark' | 'system';
+type AccountCenterLinks = {
+  profileUrl: string;
+  securityUrl: string;
+  emailUrl: string;
+  phoneUrl: string;
+  usernameUrl: string;
+  passwordUrl: string;
+  passkeyAddUrl: string;
+  passkeyManageUrl: string;
+  authenticatorAppUrl: string;
+  backupCodesUrl: string;
+};
+
+type SupportInfo = {
+  email: string;
+  accountCenter: AccountCenterLinks;
+};
+
+const defaultAccountCenterLinks: AccountCenterLinks = {
+  profileUrl: 'https://auth.liteyuki.org/account/profile',
+  securityUrl: 'https://auth.liteyuki.org/account/security',
+  emailUrl: 'https://auth.liteyuki.org/account/email',
+  phoneUrl: 'https://auth.liteyuki.org/account/phone',
+  usernameUrl: 'https://auth.liteyuki.org/account/username',
+  passwordUrl: 'https://auth.liteyuki.org/account/password',
+  passkeyAddUrl: 'https://auth.liteyuki.org/account/passkey/add',
+  passkeyManageUrl: 'https://auth.liteyuki.org/account/passkey/manage',
+  authenticatorAppUrl: 'https://auth.liteyuki.org/account/authenticator-app',
+  backupCodesUrl: 'https://auth.liteyuki.org/account/backup-codes/manage',
+};
 
 const pages: Array<{ id: Page; label: string; href: string; icon: ReactNode }> = [
   { id: 'dashboard', label: '首页', href: '/', icon: <Home size={18} /> },
@@ -58,7 +88,10 @@ const iconMap: Record<string, ReactNode> = {
 export function App() {
   const [page, setPage] = useState<Page>(pageFromPath(location.pathname));
   const [data, setData] = useState<PortalData | null>(null);
-  const [supportEmail, setSupportEmail] = useState('contact@liteyuki.org');
+  const [supportInfo, setSupportInfo] = useState<SupportInfo>({
+    email: 'contact@liteyuki.org',
+    accountCenter: defaultAccountCenterLinks,
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -74,7 +107,7 @@ export function App() {
 
   useEffect(() => {
     void loadData();
-    void api<{ email: string }>('/api/support-info').then((result) => setSupportEmail(result.email)).catch(() => undefined);
+    void api<SupportInfo>('/api/support-info').then(setSupportInfo).catch(() => undefined);
   }, []);
 
   async function loadData() {
@@ -185,11 +218,11 @@ export function App() {
 
           {page === 'dashboard' && <Dashboard data={data} navigate={navigate} />}
           {page === 'profile' && <Profile user={data.user} reload={loadData} />}
-          {page === 'security' && <Security />}
+          {page === 'security' && <Security links={supportInfo.accountCenter} />}
           {page === 'applications' && <Applications apps={data.applications} />}
           {page === 'organizations' && <Organizations user={data.user} apps={data.applications} />}
           {page === 'notifications' && <Notifications announcements={data.announcements} />}
-          {page === 'help' && <Help email={supportEmail} />}
+          {page === 'help' && <Help email={supportInfo.email} />}
         </main>
       </div>
     </div>
@@ -323,15 +356,17 @@ function Profile({ user, reload }: { user: User; reload: () => Promise<void> }) 
   );
 }
 
-function Security() {
+function Security({ links }: { links: AccountCenterLinks }) {
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       <Card className="p-5">
         <SectionTitle title="安全操作" />
         <div className="mt-4 space-y-3">
-          <ActionLine title="修改密码" href="https://auth.liteyuki.org" />
-          <ActionLine title="MFA 管理" href="https://auth.liteyuki.org" />
-          <ActionLine title="社交账号绑定" href="https://auth.liteyuki.org" />
+          <ActionLine title="修改密码" href={links.passwordUrl} />
+          <ActionLine title="安全中心" href={links.securityUrl} />
+          <ActionLine title="Authenticator MFA" href={links.authenticatorAppUrl} />
+          <ActionLine title="备份代码" href={links.backupCodesUrl} />
+          <ActionLine title="Passkey 管理" href={links.passkeyManageUrl} />
         </div>
       </Card>
       <SessionsPanel />

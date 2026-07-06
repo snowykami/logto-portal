@@ -12,6 +12,7 @@ type Config struct {
 	AppBaseURL             string
 	LogtoIssuer            string
 	LogtoAPIBaseURL        string
+	LogtoAccountBaseURL    string
 	LogtoClientID          string
 	LogtoClientSecret      string
 	ManagementClientID     string
@@ -31,6 +32,7 @@ func Load() (Config, error) {
 	appBaseURL := env("APP_BASE_URL", "http://localhost:8080")
 	logtoIssuer := strings.TrimRight(env("LOGTO_ISSUER", "https://auth.liteyuki.org/oidc"), "/")
 	logtoAPIBaseURL := env("LOGTO_API_BASE_URL", strings.TrimSuffix(logtoIssuer, "/oidc"))
+	logtoAccountBaseURL := env("LOGTO_ACCOUNT_BASE_URL", strings.TrimRight(logtoAPIBaseURL, "/")+"/account")
 
 	redirectURI := strings.TrimRight(appBaseURL, "/") + "/auth/callback"
 	postLogoutURI := strings.TrimRight(appBaseURL, "/") + "/"
@@ -44,6 +46,7 @@ func Load() (Config, error) {
 		AppBaseURL:             appBaseURL,
 		LogtoIssuer:            logtoIssuer,
 		LogtoAPIBaseURL:        strings.TrimRight(logtoAPIBaseURL, "/"),
+		LogtoAccountBaseURL:    strings.TrimRight(logtoAccountBaseURL, "/"),
 		LogtoClientID:          os.Getenv("LOGTO_CLIENT_ID"),
 		LogtoClientSecret:      os.Getenv("LOGTO_CLIENT_SECRET"),
 		ManagementClientID:     os.Getenv("LOGTO_MANAGEMENT_CLIENT_ID"),

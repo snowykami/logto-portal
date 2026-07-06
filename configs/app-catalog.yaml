@@ -1,62 +1,16 @@
-- id: gitea
-  name: Gitea
-  description: 轻雪代码托管与协作平台
-  url: https://git.liteyuki.org
-  icon: git-branch
-  required_roles:
-    - liteyuki-account-user
-  required_organizations: []
-  enabled: true
-  sort_order: 10
-- id: grafana
-  name: Grafana
-  description: 监控指标、仪表盘与告警查看入口
-  url: https://grafana.liteyuki.org
-  icon: activity
-  required_roles:
-    - liteyuki-grafana-user
-    - liteyuki-grafana-admin
-  required_organizations: []
-  enabled: true
-  sort_order: 20
-- id: harbor
-  name: Harbor
-  description: 容器镜像仓库与制品管理
-  url: https://harbor.liteyuki.org
-  icon: package
-  required_roles:
-    - liteyuki-harbor-user
-    - liteyuki-harbor-admin
-  required_organizations: []
-  enabled: true
-  sort_order: 30
-- id: openlist
-  name: OpenList
-  description: 轻雪文件与资源访问入口
-  url: https://openlist.liteyuki.org
-  icon: folder-open
-  required_roles:
-    - liteyuki-openlist-user
-  required_organizations: []
-  enabled: true
-  sort_order: 40
-- id: community
-  name: 社区
-  description: 轻雪社区讨论与公告空间
-  url: https://community.liteyuki.org
-  icon: messages-square
-  required_roles: []
-  required_organizations: []
-  enabled: true
-  sort_order: 50
-- id: devops
-  name: DevOps 平台
-  description: 发布流水线、环境管理与运维工具入口
-  url: https://devops.liteyuki.org
-  icon: workflow
-  required_roles:
-    - liteyuki-devops-user
-    - liteyuki-devops-admin
-  required_organizations: []
-  enabled: true
-  sort_order: 60
+# Optional display and access-control overlay for applications returned by
+# Logto Management API. Entries here never create standalone portal apps.
+#
+# Match an application by Logto application id or by name, then override fields
+# such as url, icon, sort_order, required_roles, and required_organizations.
+#
+# Example:
+# - id: your-logto-application-id
+#   icon: workflow
+#   url: https://app.example.com
+#   required_roles:
+#     - example-user
+#   required_organizations: []
+#   enabled: true
+#   sort_order: 10
+[]

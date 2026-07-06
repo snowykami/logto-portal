@@ -119,8 +119,6 @@ func (c *ManagementClient) token(ctx context.Context) (string, error) {
 
 	values := url.Values{}
 	values.Set("grant_type", "client_credentials")
-	values.Set("client_id", c.clientID)
-	values.Set("client_secret", c.clientSecret)
 	values.Set("resource", c.resource)
 	if c.scope != "" {
 		values.Set("scope", c.scope)
@@ -132,6 +130,7 @@ func (c *ManagementClient) token(ctx context.Context) (string, error) {
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetBasicAuth(c.clientID, c.clientSecret)
 
 	resp, err := c.client.Do(req)
 	if err != nil {

@@ -19,8 +19,21 @@ func (s *Server) health(c *gin.Context) {
 }
 
 func (s *Server) supportInfo(c *gin.Context) {
+	accountBaseURL := s.deps.Config.LogtoAccountBaseURL
 	c.JSON(http.StatusOK, gin.H{
 		"email": s.deps.Config.SupportEmail,
+		"accountCenter": gin.H{
+			"profileUrl":          accountBaseURL + "/profile",
+			"securityUrl":         accountBaseURL + "/security",
+			"emailUrl":            accountBaseURL + "/email",
+			"phoneUrl":            accountBaseURL + "/phone",
+			"usernameUrl":         accountBaseURL + "/username",
+			"passwordUrl":         accountBaseURL + "/password",
+			"passkeyAddUrl":       accountBaseURL + "/passkey/add",
+			"passkeyManageUrl":    accountBaseURL + "/passkey/manage",
+			"authenticatorAppUrl": accountBaseURL + "/authenticator-app",
+			"backupCodesUrl":      accountBaseURL + "/backup-codes/manage",
+		},
 		"topics": []string{
 			"登录异常帮助",
 			"账号迁移说明",
@@ -116,20 +129,28 @@ func (s *Server) permissions(c *gin.Context) {
 
 func (s *Server) appCatalog(c *gin.Context) {
 	user := mustSession(c).User
-	catalog := s.deps.Catalog
-	source := "static"
-	if s.deps.Management != nil {
-		managedApps, err := s.deps.Management.ListApplications(c.Request.Context())
-		if err != nil {
-			s.deps.Logger.Warn("management applications fetch failed; falling back to static catalog", "error", err)
-		} else {
-			catalog = portal.MergeManagedApps(managedApps, s.deps.Catalog)
-			source = "management"
-		}
+	if s.deps.Management == nil {
+		c.JSON(http.StatusOK, gin.H{
+			"applications": []portal.AppCatalogResponseItem{},
+			"source":       "management_not_configured",
+		})
+		return
 	}
+
+	managedApps, err := s.deps.Management.ListApplications(c.Request.Context())
+	if err != nil {
+		s.deps.Logger.Warn("management applications fetch failed", "error", err)
+		c.JSON(http.StatusOK, gin.H{
+			"applications": []portal.AppCatalogResponseItem{},
+			"source":       "management_error",
+		})
+		return
+	}
+
+	catalog := portal.MergeManagedApps(managedApps, s.deps.Catalog)
 	c.JSON(http.StatusOK, gin.H{
 		"applications": portal.FilterApps(catalog, user),
-		"source":       source,
+		"source":       "management",
 	})
 }
 
