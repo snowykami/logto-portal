@@ -20,7 +20,7 @@ export default {
         danger: 'hsl(var(--danger))',
       },
       boxShadow: {
-        soft: '0 18px 50px rgba(17, 24, 39, 0.08)',
+        soft: '0 18px 50px rgba(15, 98, 254, 0.08)',
       },
     },
   },
