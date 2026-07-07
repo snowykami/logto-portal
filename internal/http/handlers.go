@@ -1,8 +1,11 @@
 package http
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -25,6 +28,7 @@ func (s *Server) supportInfo(c *gin.Context) {
 		"accountCenter": gin.H{
 			"profileUrl":          accountBaseURL + "/profile",
 			"securityUrl":         accountBaseURL + "/security",
+			"sessionsUrl":         accountBaseURL + "/sessions",
 			"emailUrl":            accountBaseURL + "/email",
 			"phoneUrl":            accountBaseURL + "/phone",
 			"usernameUrl":         accountBaseURL + "/username",
@@ -168,6 +172,117 @@ func (s *Server) markAnnouncementRead(c *gin.Context) {
 	})
 }
 
+func (s *Server) listMyAppRequests(c *gin.Context) {
+	session := mustSession(c)
+	c.JSON(http.StatusOK, gin.H{
+		"requests": s.deps.Requests.ListAppRequests(session.User.Sub),
+	})
+}
+
+func (s *Server) createAppRequest(c *gin.Context) {
+	session := mustSession(c)
+	var request struct {
+		Name                   string   `json:"name"`
+		Type                   string   `json:"type"`
+		Description            string   `json:"description"`
+		RedirectURIs           []string `json:"redirectUris"`
+		PostLogoutRedirectURIs []string `json:"postLogoutRedirectUris"`
+		CORSAllowedOrigins     []string `json:"corsAllowedOrigins"`
+		PortalURL              string   `json:"portalUrl"`
+		Reason                 string   `json:"reason"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request"})
+		return
+	}
+
+	request.Name = strings.TrimSpace(request.Name)
+	request.Type = strings.TrimSpace(request.Type)
+	request.RedirectURIs = cleanStrings(request.RedirectURIs)
+	request.PostLogoutRedirectURIs = cleanStrings(request.PostLogoutRedirectURIs)
+	request.CORSAllowedOrigins = cleanStrings(request.CORSAllowedOrigins)
+	request.PortalURL = strings.TrimSpace(request.PortalURL)
+	if request.Name == "" || !isAllowedUserApplicationType(request.Type) || len(request.RedirectURIs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_app_request"})
+		return
+	}
+	if !allAbsoluteURLs(request.RedirectURIs) || !allAbsoluteURLs(request.PostLogoutRedirectURIs) || !allAbsoluteURLs(request.CORSAllowedOrigins) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_urls"})
+		return
+	}
+	if request.PortalURL != "" && !allAbsoluteURLs([]string{request.PortalURL}) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_portal_url"})
+		return
+	}
+
+	created, err := s.deps.Requests.CreateAppRequest(portal.AppRequest{
+		RequesterSub:           session.User.Sub,
+		RequesterEmail:         session.User.Email,
+		Name:                   request.Name,
+		Type:                   request.Type,
+		Description:            strings.TrimSpace(request.Description),
+		RedirectURIs:           request.RedirectURIs,
+		PostLogoutRedirectURIs: request.PostLogoutRedirectURIs,
+		CORSAllowedOrigins:     request.CORSAllowedOrigins,
+		PortalURL:              request.PortalURL,
+		Reason:                 strings.TrimSpace(request.Reason),
+	})
+	if err != nil {
+		s.deps.Logger.Warn("app request create failed", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "request_store_failed"})
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"request": created})
+}
+
+func (s *Server) listMyPermissionRequests(c *gin.Context) {
+	session := mustSession(c)
+	c.JSON(http.StatusOK, gin.H{
+		"requests": s.deps.Requests.ListPermissionRequests(session.User.Sub),
+	})
+}
+
+func (s *Server) createPermissionRequest(c *gin.Context) {
+	session := mustSession(c)
+	var request struct {
+		Kind          string `json:"kind"`
+		RoleID        string `json:"roleId"`
+		RoleName      string `json:"roleName"`
+		ApplicationID string `json:"applicationId"`
+		Reason        string `json:"reason"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request"})
+		return
+	}
+	request.Kind = strings.TrimSpace(request.Kind)
+	request.RoleID = strings.TrimSpace(request.RoleID)
+	request.RoleName = strings.TrimSpace(request.RoleName)
+	if request.Kind == "" {
+		request.Kind = "global_role"
+	}
+	if request.Kind != "global_role" || (request.RoleID == "" && request.RoleName == "") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_permission_request"})
+		return
+	}
+
+	created, err := s.deps.Requests.CreatePermissionRequest(portal.PermissionRequest{
+		RequesterSub:   session.User.Sub,
+		RequesterEmail: session.User.Email,
+		Kind:           request.Kind,
+		RoleID:         request.RoleID,
+		RoleName:       request.RoleName,
+		ApplicationID:  strings.TrimSpace(request.ApplicationID),
+		Reason:         strings.TrimSpace(request.Reason),
+	})
+	if err != nil {
+		s.deps.Logger.Warn("permission request create failed", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "request_store_failed"})
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"request": created})
+}
+
 func (s *Server) updateProfile(c *gin.Context) {
 	session := mustSession(c)
 	if s.deps.Management == nil {
@@ -260,7 +375,170 @@ func (s *Server) adminAppCatalog(c *gin.Context) {
 }
 
 func (s *Server) auditLogs(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"auditLogs": []gin.H{}})
+	c.JSON(http.StatusOK, gin.H{"auditLogs": s.deps.Requests.ListAuditLogs()})
+}
+
+func (s *Server) adminListAppRequests(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"requests": s.deps.Requests.ListAppRequests("")})
+}
+
+func (s *Server) approveAppRequest(c *gin.Context) {
+	session := mustSession(c)
+	if s.deps.Management == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "management_api_not_configured"})
+		return
+	}
+
+	request, ok := s.deps.Requests.GetAppRequest(c.Param("id"))
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "request_not_found"})
+		return
+	}
+	if request.Status != portal.RequestStatusPending {
+		c.JSON(http.StatusConflict, gin.H{"error": "request_is_not_pending"})
+		return
+	}
+
+	createdApp, err := s.deps.Management.CreateApplication(c.Request.Context(), logto.CreateApplicationRequest{
+		Name:        request.Name,
+		Type:        request.Type,
+		Description: request.Description,
+		OidcClientMetadata: map[string]any{
+			"redirectUris":           request.RedirectURIs,
+			"postLogoutRedirectUris": request.PostLogoutRedirectURIs,
+		},
+		CustomClientMetadata: map[string]any{
+			"corsAllowedOrigins": request.CORSAllowedOrigins,
+		},
+		CustomData: map[string]any{
+			"portalOwnerSub":   request.RequesterSub,
+			"portalOwnerEmail": request.RequesterEmail,
+			"portalStatus":     "approved",
+			"portalUrl":        request.PortalURL,
+		},
+	})
+	if err != nil {
+		s.deps.Logger.Warn("app request approve failed", "error", err)
+		c.JSON(http.StatusBadGateway, gin.H{"error": "management_api_failed"})
+		return
+	}
+	appID, _ := createdApp["id"].(string)
+	reviewNote := reviewNote(c)
+	reviewed, err := s.deps.Requests.ReviewAppRequest(c.Param("id"), portal.RequestStatusApproved, session.User.Sub, reviewNote, appID)
+	if err != nil {
+		s.deps.Logger.Warn("app request review store failed", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "request_store_failed"})
+		return
+	}
+	_, _ = s.deps.Requests.AppendAuditLog(portal.AuditLog{
+		ActorSub:   session.User.Sub,
+		Action:     "approve_app_request",
+		TargetType: "app_request",
+		TargetID:   reviewed.ID,
+		Metadata: map[string]any{
+			"logtoApplicationId": appID,
+			"requesterSub":       reviewed.RequesterSub,
+		},
+	})
+	c.JSON(http.StatusOK, gin.H{"request": reviewed, "application": createdApp})
+}
+
+func (s *Server) rejectAppRequest(c *gin.Context) {
+	session := mustSession(c)
+	reviewed, err := s.deps.Requests.ReviewAppRequest(c.Param("id"), portal.RequestStatusRejected, session.User.Sub, reviewNote(c), "")
+	if errors.Is(err, portal.ErrRequestNotPending) {
+		c.JSON(http.StatusConflict, gin.H{"error": "request_is_not_pending"})
+		return
+	}
+	if err != nil {
+		c.JSON(statusForStoreError(err), gin.H{"error": "request_review_failed"})
+		return
+	}
+	_, _ = s.deps.Requests.AppendAuditLog(portal.AuditLog{
+		ActorSub:   session.User.Sub,
+		Action:     "reject_app_request",
+		TargetType: "app_request",
+		TargetID:   reviewed.ID,
+		Metadata: map[string]any{
+			"requesterSub": reviewed.RequesterSub,
+		},
+	})
+	c.JSON(http.StatusOK, gin.H{"request": reviewed})
+}
+
+func (s *Server) adminListPermissionRequests(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"requests": s.deps.Requests.ListPermissionRequests("")})
+}
+
+func (s *Server) approvePermissionRequest(c *gin.Context) {
+	session := mustSession(c)
+	if s.deps.Management == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "management_api_not_configured"})
+		return
+	}
+
+	request, ok := s.deps.Requests.GetPermissionRequest(c.Param("id"))
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "request_not_found"})
+		return
+	}
+	if request.Status != portal.RequestStatusPending {
+		c.JSON(http.StatusConflict, gin.H{"error": "request_is_not_pending"})
+		return
+	}
+	roleID := request.RoleID
+	if roleID == "" {
+		resolvedRoleID, err := s.resolveRoleID(c.Request.Context(), request.RoleName)
+		if err != nil {
+			s.deps.Logger.Warn("permission request role resolve failed", "error", err)
+			c.JSON(http.StatusBadGateway, gin.H{"error": "role_resolve_failed"})
+			return
+		}
+		roleID = resolvedRoleID
+	}
+	if err := s.deps.Management.AssignRolesToUser(c.Request.Context(), request.RequesterSub, []string{roleID}); err != nil {
+		s.deps.Logger.Warn("permission request approve failed", "error", err)
+		c.JSON(http.StatusBadGateway, gin.H{"error": "management_api_failed"})
+		return
+	}
+	reviewed, err := s.deps.Requests.ReviewPermissionRequest(c.Param("id"), portal.RequestStatusApproved, session.User.Sub, reviewNote(c))
+	if err != nil {
+		c.JSON(statusForStoreError(err), gin.H{"error": "request_review_failed"})
+		return
+	}
+	_, _ = s.deps.Requests.AppendAuditLog(portal.AuditLog{
+		ActorSub:   session.User.Sub,
+		Action:     "approve_permission_request",
+		TargetType: "permission_request",
+		TargetID:   reviewed.ID,
+		Metadata: map[string]any{
+			"requesterSub": reviewed.RequesterSub,
+			"roleId":       roleID,
+			"roleName":     reviewed.RoleName,
+		},
+	})
+	c.JSON(http.StatusOK, gin.H{"request": reviewed})
+}
+
+func (s *Server) rejectPermissionRequest(c *gin.Context) {
+	session := mustSession(c)
+	reviewed, err := s.deps.Requests.ReviewPermissionRequest(c.Param("id"), portal.RequestStatusRejected, session.User.Sub, reviewNote(c))
+	if err != nil {
+		c.JSON(statusForStoreError(err), gin.H{"error": "request_review_failed"})
+		return
+	}
+	_, _ = s.deps.Requests.AppendAuditLog(portal.AuditLog{
+		ActorSub:   session.User.Sub,
+		Action:     "reject_permission_request",
+		TargetType: "permission_request",
+		TargetID:   reviewed.ID,
+		Metadata: map[string]any{
+			"requesterSub": reviewed.RequesterSub,
+			"roleId":       reviewed.RoleID,
+			"roleName":     reviewed.RoleName,
+		},
+	})
+	c.JSON(http.StatusOK, gin.H{"request": reviewed})
 }
 
 func (s *Server) requireSession(c *gin.Context) {
@@ -317,4 +595,62 @@ func hasRole(user auth.User, role string) bool {
 		}
 	}
 	return false
+}
+
+func reviewNote(c *gin.Context) string {
+	var request struct {
+		Note string `json:"note"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(request.Note)
+}
+
+func (s *Server) resolveRoleID(ctx context.Context, roleName string) (string, error) {
+	roles, err := s.deps.Management.ListRoles(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, role := range roles {
+		if role.Name == roleName {
+			return role.ID, nil
+		}
+	}
+	return "", os.ErrNotExist
+}
+
+func statusForStoreError(err error) int {
+	if errors.Is(err, os.ErrNotExist) {
+		return http.StatusNotFound
+	}
+	if errors.Is(err, portal.ErrRequestNotPending) {
+		return http.StatusConflict
+	}
+	return http.StatusInternalServerError
+}
+
+func isAllowedUserApplicationType(value string) bool {
+	return value == "SPA" || value == "Traditional"
+}
+
+func allAbsoluteURLs(values []string) bool {
+	for _, value := range cleanStrings(values) {
+		parsed, err := url.ParseRequestURI(value)
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+			return false
+		}
+	}
+	return true
+}
+
+func cleanStrings(values []string) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
 }

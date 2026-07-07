@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   ChevronRight,
   CircleAlert,
+  Code2,
   ExternalLink,
   FolderOpen,
   GitBranch,
@@ -24,20 +25,21 @@ import {
   X,
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { FormEvent, ReactNode, useEffect, useMemo, useState } from 'react';
+import { FormEvent, ReactNode, useEffect, useState } from 'react';
 import { api, ApiError } from './lib/api';
-import type { Announcement, AppCatalogItem, PortalData, User } from './types';
+import type { Announcement, AppCatalogItem, AppRequest, PermissionRequest, PortalData, User } from './types';
 import { Badge } from './components/ui/badge';
 import { Button } from './components/ui/button';
 import { Card } from './components/ui/card';
 import { useConfirm } from './components/ui/confirm-dialog';
 import { Input } from './components/ui/input';
 
-type Page = 'dashboard' | 'profile' | 'security' | 'applications' | 'organizations' | 'notifications' | 'help';
+type Page = 'dashboard' | 'profile' | 'security' | 'applications' | 'organizations' | 'developer' | 'notifications' | 'help';
 type Theme = 'light' | 'dark' | 'system';
 type AccountCenterLinks = {
   profileUrl: string;
   securityUrl: string;
+  sessionsUrl: string;
   emailUrl: string;
   phoneUrl: string;
   usernameUrl: string;
@@ -56,6 +58,7 @@ type SupportInfo = {
 const defaultAccountCenterLinks: AccountCenterLinks = {
   profileUrl: 'https://auth.liteyuki.org/account/profile',
   securityUrl: 'https://auth.liteyuki.org/account/security',
+  sessionsUrl: 'https://auth.liteyuki.org/account/sessions',
   emailUrl: 'https://auth.liteyuki.org/account/email',
   phoneUrl: 'https://auth.liteyuki.org/account/phone',
   usernameUrl: 'https://auth.liteyuki.org/account/username',
@@ -72,6 +75,7 @@ const pages: Array<{ id: Page; label: string; href: string; icon: ReactNode }> =
   { id: 'security', label: '安全中心', href: '/security', icon: <Shield size={18} /> },
   { id: 'applications', label: '应用入口', href: '/applications', icon: <Workflow size={18} /> },
   { id: 'organizations', label: '组织权限', href: '/organizations', icon: <UsersRound size={18} /> },
+  { id: 'developer', label: '开发者', href: '/developer', icon: <Code2 size={18} /> },
   { id: 'notifications', label: '公告通知', href: '/notifications', icon: <Bell size={18} /> },
   { id: 'help', label: '帮助支持', href: '/help', icon: <HelpCircle size={18} /> },
 ];
@@ -221,6 +225,7 @@ export function App() {
           {page === 'security' && <Security links={supportInfo.accountCenter} />}
           {page === 'applications' && <Applications apps={data.applications} />}
           {page === 'organizations' && <Organizations user={data.user} apps={data.applications} />}
+          {page === 'developer' && <Developer user={data.user} />}
           {page === 'notifications' && <Notifications announcements={data.announcements} />}
           {page === 'help' && <Help email={supportInfo.email} />}
         </main>
@@ -369,35 +374,23 @@ function Security({ links }: { links: AccountCenterLinks }) {
           <ActionLine title="Passkey 管理" href={links.passkeyManageUrl} />
         </div>
       </Card>
-      <SessionsPanel />
+      <SessionsPanel links={links} />
     </div>
   );
 }
 
-function SessionsPanel() {
-  const [payload, setPayload] = useState<unknown>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  async function load() {
-    setError(null);
-    try {
-      setPayload(await api('/api/me/sessions'));
-    } catch {
-      setError('会话列表暂不可用，请检查 Account API 权限。');
-    }
-  }
-
-  useEffect(() => {
-    void load();
-  }, []);
-
+function SessionsPanel({ links }: { links: AccountCenterLinks }) {
   return (
     <Card className="p-5">
-      <SectionTitle title="活跃会话" action={<Button variant="ghost" icon={<RefreshCw size={16} />} onClick={() => void load()}>刷新</Button>} />
-      <div className="mt-4 rounded-md border border-border bg-muted p-3 text-xs text-muted-foreground">
-        {error ? error : <pre className="max-h-80 overflow-auto whitespace-pre-wrap">{JSON.stringify(payload ?? {}, null, 2)}</pre>}
+      <SectionTitle title="活跃会话" />
+      <div className="mt-4 rounded-md border border-border bg-muted p-3 text-sm leading-6 text-muted-foreground">
+        会话查看和撤销会跳转到 Logto 账户中心。该页面会按 Logto 配置完成安全验证，不会触发 Portal 后端直接调用 Account API sessions。
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
+        <a className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90" href={links.sessionsUrl} target="_blank" rel="noreferrer">
+          管理会话
+          <ExternalLink size={15} />
+        </a>
         <LogoutButton global={false} />
         <LogoutButton global />
       </div>
@@ -440,6 +433,262 @@ function Organizations({ user, apps }: { user: User; apps: AppCatalogItem[] }) {
       </Card>
     </div>
   );
+}
+
+function Developer({ user }: { user: User }) {
+  const confirm = useConfirm();
+  const isAdmin = user.roles.includes('liteyuki-account-admin');
+  const [appRequests, setAppRequests] = useState<AppRequest[]>([]);
+  const [permissionRequests, setPermissionRequests] = useState<PermissionRequest[]>([]);
+  const [adminAppRequests, setAdminAppRequests] = useState<AppRequest[]>([]);
+  const [adminPermissionRequests, setAdminPermissionRequests] = useState<PermissionRequest[]>([]);
+  const [message, setMessage] = useState<string | null>(null);
+  const [appForm, setAppForm] = useState({
+    name: '',
+    type: 'SPA',
+    description: '',
+    redirectUris: '',
+    postLogoutRedirectUris: '',
+    corsAllowedOrigins: '',
+    portalUrl: '',
+    reason: '',
+  });
+  const [permissionForm, setPermissionForm] = useState({
+    roleName: '',
+    reason: '',
+  });
+
+  async function load() {
+    const [apps, permissions] = await Promise.all([
+      api<{ requests: AppRequest[] }>('/api/developer/app-requests'),
+      api<{ requests: PermissionRequest[] }>('/api/permission-requests'),
+    ]);
+    setAppRequests(apps.requests);
+    setPermissionRequests(permissions.requests);
+    if (isAdmin) {
+      const [adminApps, adminPermissions] = await Promise.all([
+        api<{ requests: AppRequest[] }>('/api/admin/app-requests'),
+        api<{ requests: PermissionRequest[] }>('/api/admin/permission-requests'),
+      ]);
+      setAdminAppRequests(adminApps.requests);
+      setAdminPermissionRequests(adminPermissions.requests);
+    }
+  }
+
+  useEffect(() => {
+    void load().catch(() => setMessage('申请数据暂时无法加载。'));
+  }, []);
+
+  async function submitAppRequest(event: FormEvent) {
+    event.preventDefault();
+    const confirmed = await confirm({
+      title: '提交应用创建申请',
+      description: '申请会进入平台审批队列，审批通过后由后端创建 Logto 应用。',
+      confirmText: '提交申请',
+    });
+    if (!confirmed) {
+      return;
+    }
+    await api('/api/developer/app-requests', {
+      method: 'POST',
+      body: JSON.stringify({
+        ...appForm,
+        redirectUris: splitValues(appForm.redirectUris),
+        postLogoutRedirectUris: splitValues(appForm.postLogoutRedirectUris),
+        corsAllowedOrigins: splitValues(appForm.corsAllowedOrigins),
+      }),
+    });
+    setMessage('应用创建申请已提交。');
+    setAppForm({ name: '', type: 'SPA', description: '', redirectUris: '', postLogoutRedirectUris: '', corsAllowedOrigins: '', portalUrl: '', reason: '' });
+    await load();
+  }
+
+  async function submitPermissionRequest(event: FormEvent) {
+    event.preventDefault();
+    const confirmed = await confirm({
+      title: '提交权限申请',
+      description: '审批通过后，平台会通过 Logto Management API 给当前账号分配对应角色。',
+      confirmText: '提交申请',
+    });
+    if (!confirmed) {
+      return;
+    }
+    await api('/api/permission-requests', {
+      method: 'POST',
+      body: JSON.stringify({
+        kind: 'global_role',
+        roleName: permissionForm.roleName,
+        reason: permissionForm.reason,
+      }),
+    });
+    setMessage('权限申请已提交。');
+    setPermissionForm({ roleName: '', reason: '' });
+    await load();
+  }
+
+  async function review(kind: 'app' | 'permission', id: string, action: 'approve' | 'reject') {
+    const confirmed = await confirm({
+      title: action === 'approve' ? '批准申请' : '驳回申请',
+      description: action === 'approve' ? '批准后会立即调用 Logto Management API 执行变更。' : '申请会被标记为已驳回。',
+      confirmText: action === 'approve' ? '批准' : '驳回',
+      variant: action === 'approve' ? 'default' : 'danger',
+    });
+    if (!confirmed) {
+      return;
+    }
+    const prefix = kind === 'app' ? '/api/admin/app-requests' : '/api/admin/permission-requests';
+    await api(`${prefix}/${id}/${action}`, { method: 'POST', body: JSON.stringify({ note: '' }) });
+    setMessage(action === 'approve' ? '申请已批准。' : '申请已驳回。');
+    await load();
+  }
+
+  return (
+    <div className="space-y-4">
+      {message && <Card className="p-4 text-sm text-muted-foreground">{message}</Card>}
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Card className="p-5">
+          <SectionTitle title="应用创建申请" />
+          <form className="mt-4 space-y-4" onSubmit={(event) => void submitAppRequest(event)}>
+            <Field label="应用名称">
+              <Input value={appForm.name} onChange={(event) => setAppForm({ ...appForm, name: event.target.value })} required />
+            </Field>
+            <Field label="应用类型">
+              <select className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary" value={appForm.type} onChange={(event) => setAppForm({ ...appForm, type: event.target.value })}>
+                <option value="SPA">SPA</option>
+                <option value="Traditional">Traditional</option>
+              </select>
+            </Field>
+            <Field label="Redirect URI">
+              <Textarea value={appForm.redirectUris} onChange={(value) => setAppForm({ ...appForm, redirectUris: value })} />
+            </Field>
+            <Field label="Post logout URI">
+              <Textarea value={appForm.postLogoutRedirectUris} onChange={(value) => setAppForm({ ...appForm, postLogoutRedirectUris: value })} />
+            </Field>
+            <Field label="CORS Origin">
+              <Textarea value={appForm.corsAllowedOrigins} onChange={(value) => setAppForm({ ...appForm, corsAllowedOrigins: value })} />
+            </Field>
+            <Field label="入口 URL">
+              <Input value={appForm.portalUrl} onChange={(event) => setAppForm({ ...appForm, portalUrl: event.target.value })} />
+            </Field>
+            <Field label="申请说明">
+              <Textarea value={appForm.reason} onChange={(value) => setAppForm({ ...appForm, reason: value })} />
+            </Field>
+            <Button type="submit" variant="primary" icon={<Save size={16} />}>提交应用申请</Button>
+          </form>
+        </Card>
+
+        <Card className="p-5">
+          <SectionTitle title="权限申请" />
+          <form className="mt-4 space-y-4" onSubmit={(event) => void submitPermissionRequest(event)}>
+            <Field label="Role name">
+              <Input value={permissionForm.roleName} onChange={(event) => setPermissionForm({ ...permissionForm, roleName: event.target.value })} required />
+            </Field>
+            <Field label="申请说明">
+              <Textarea value={permissionForm.reason} onChange={(value) => setPermissionForm({ ...permissionForm, reason: value })} />
+            </Field>
+            <Button type="submit" variant="primary" icon={<Save size={16} />}>提交权限申请</Button>
+          </form>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <RequestList title="我的应用申请" requests={appRequests} />
+        <RequestList title="我的权限申请" requests={permissionRequests} />
+      </div>
+
+      {isAdmin && (
+        <div className="grid gap-4 xl:grid-cols-2">
+          <ReviewList title="应用审批" requests={adminAppRequests} onReview={(id, action) => void review('app', id, action)} />
+          <ReviewList title="权限审批" requests={adminPermissionRequests} onReview={(id, action) => void review('permission', id, action)} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RequestList({ title, requests }: { title: string; requests: Array<AppRequest | PermissionRequest> }) {
+  return (
+    <Card className="p-5">
+      <SectionTitle title={title} />
+      <div className="mt-4 space-y-3">
+        {requests.length === 0 ? (
+          <p className="text-sm text-muted-foreground">暂无申请。</p>
+        ) : (
+          requests.map((request) => <RequestRow key={request.id} request={request} />)
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function ReviewList({
+  title,
+  requests,
+  onReview,
+}: {
+  title: string;
+  requests: Array<AppRequest | PermissionRequest>;
+  onReview: (id: string, action: 'approve' | 'reject') => void;
+}) {
+  const pendingRequests = requests.filter((request) => request.status === 'pending');
+  return (
+    <Card className="p-5">
+      <SectionTitle title={title} />
+      <div className="mt-4 space-y-3">
+        {pendingRequests.length === 0 ? (
+          <p className="text-sm text-muted-foreground">暂无待审批申请。</p>
+        ) : (
+          pendingRequests.map((request) => (
+            <div key={request.id} className="rounded-md border border-border p-3">
+              <RequestRow request={request} />
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button variant="primary" onClick={() => onReview(request.id, 'approve')}>批准</Button>
+                <Button variant="danger" onClick={() => onReview(request.id, 'reject')}>驳回</Button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function RequestRow({ request }: { request: AppRequest | PermissionRequest }) {
+  const isAppRequest = 'redirectUris' in request;
+  return (
+    <div className="rounded-md border border-border p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="font-medium">{isAppRequest ? request.name : request.roleName || request.roleId}</div>
+        <Badge tone={request.status === 'approved' ? 'ok' : request.status === 'rejected' ? 'danger' : 'warn'}>{request.status}</Badge>
+      </div>
+      <div className="mt-2 space-y-1 text-sm text-muted-foreground">
+        <div>{request.requesterEmail || request.requesterSub}</div>
+        {isAppRequest ? (
+          <div>{request.type} · {request.portalUrl || request.redirectUris[0] || '未配置入口'}</div>
+        ) : (
+          <div>{request.kind}</div>
+        )}
+        {request.reason && <div>{request.reason}</div>}
+      </div>
+    </div>
+  );
+}
+
+function Textarea({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <textarea
+      className="min-h-20 w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition placeholder:text-muted-foreground focus:ring-2 focus:ring-primary"
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+    />
+  );
+}
+
+function splitValues(value: string) {
+  return value
+    .split(/[\n,]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function Notifications({ announcements }: { announcements: Announcement[] }) {
@@ -683,6 +932,7 @@ function pageSubtitle(page: Page) {
     security: '密码、MFA、社交账号和活跃会话。',
     applications: '按角色和组织展示轻雪应用访问状态。',
     organizations: '解释当前 roles、organizations 和 organization_roles。',
+    developer: '应用创建、权限申请和管理员审批。',
     notifications: '系统公告、迁移公告、维护公告和内测通知。',
     help: '登录异常、迁移说明、常见问题和支持入口。',
   };

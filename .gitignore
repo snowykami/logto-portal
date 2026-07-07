@@ -2,6 +2,7 @@ node_modules/
 frontend/node_modules/
 internal/static/dist/assets/
 dist/
+data/
 .DS_Store
 *.log
 .env

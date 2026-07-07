@@ -46,6 +46,14 @@ safe local overlay for portal URLs, icons, ordering, and role / organization
 access rules. Static YAML entries never create standalone portal apps; if
 Management API is unavailable, the portal returns an empty application list.
 
+Developer self-service requests are stored in `PORTAL_REQUESTS_PATH`. Users can
+request SPA or Traditional applications and global roles. Admin users with
+`liteyuki-account-admin` review the requests; approval calls Logto Management
+API to create applications or assign user roles.
+Traditional application secrets are not persisted or returned to ordinary users
+by the portal; handle secret delivery or rotation through a separate audited
+admin flow.
+
 ## Production Shape
 
 ```text

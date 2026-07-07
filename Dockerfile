@@ -31,6 +31,7 @@ ENV PORT=8080 \
 	SESSION_COOKIE_NAME=yp_session \
 	APP_CATALOG_PATH=configs/app-catalog.yaml \
 	ANNOUNCEMENTS_PATH=configs/announcements.yaml \
+	PORTAL_REQUESTS_PATH=data/requests.json \
 	SUPPORT_EMAIL=contact@liteyuki.org
 
 ENTRYPOINT ["yuki-id-portal"]

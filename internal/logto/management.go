@@ -58,6 +58,22 @@ type ManagementApplication struct {
 	AdditionalProperties map[string]interface{} `json:"-"`
 }
 
+type CreateApplicationRequest struct {
+	Name                 string         `json:"name"`
+	Type                 string         `json:"type"`
+	Description          string         `json:"description,omitempty"`
+	OidcClientMetadata   map[string]any `json:"oidcClientMetadata,omitempty"`
+	CustomClientMetadata map[string]any `json:"customClientMetadata,omitempty"`
+	CustomData           map[string]any `json:"customData,omitempty"`
+}
+
+type ManagementRole struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Type        string `json:"type"`
+}
+
 func NewManagementClient(cfg ManagementConfig) *ManagementClient {
 	return &ManagementClient{
 		apiBaseURL:   strings.TrimRight(cfg.APIBaseURL, "/"),
@@ -76,6 +92,14 @@ func (c *ManagementClient) UpdateUser(ctx context.Context, userID string, update
 		return nil, err
 	}
 	return c.doJSON(ctx, http.MethodPatch, "/api/users/"+url.PathEscape(userID), token, update)
+}
+
+func (c *ManagementClient) CreateApplication(ctx context.Context, request CreateApplicationRequest) (map[string]any, error) {
+	token, err := c.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return c.doJSON(ctx, http.MethodPost, "/api/applications", token, request)
 }
 
 func (c *ManagementClient) ListApplications(ctx context.Context) ([]ManagementApplication, error) {
@@ -107,6 +131,42 @@ func (c *ManagementClient) ListApplications(ctx context.Context) ([]ManagementAp
 	}
 
 	return apps, nil
+}
+
+func (c *ManagementClient) ListRoles(ctx context.Context) ([]ManagementRole, error) {
+	token, err := c.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := c.doRawJSON(ctx, http.MethodGet, "/api/roles", token, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var direct []ManagementRole
+	if err := json.Unmarshal(data, &direct); err == nil {
+		return direct, nil
+	}
+
+	var wrapped struct {
+		Data []ManagementRole `json:"data"`
+	}
+	if err := json.Unmarshal(data, &wrapped); err != nil {
+		return nil, err
+	}
+	return wrapped.Data, nil
+}
+
+func (c *ManagementClient) AssignRolesToUser(ctx context.Context, userID string, roleIDs []string) error {
+	token, err := c.token(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = c.doJSON(ctx, http.MethodPost, "/api/users/"+url.PathEscape(userID)+"/roles", token, map[string]any{
+		"roleIds": roleIDs,
+	})
+	return err
 }
 
 func (c *ManagementClient) token(ctx context.Context) (string, error) {

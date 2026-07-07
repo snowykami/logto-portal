@@ -39,6 +39,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	requestStore, err := portal.NewRequestStore(cfg.PortalRequestsPath)
+	if err != nil {
+		logger.Error("failed to load portal requests", "error", err)
+		os.Exit(1)
+	}
+
 	sessionManager := auth.NewSessionManager(cfg.SessionCookieName, cfg.CookieSecure, 12*time.Hour)
 	stateStore := auth.NewStateStore(10 * time.Minute)
 
@@ -77,6 +83,7 @@ func main() {
 		Management:    managementClient,
 		Catalog:       catalog,
 		Announcements: announcements,
+		Requests:      requestStore,
 		Static:        static.FS(),
 	})
 

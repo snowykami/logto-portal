@@ -23,6 +23,7 @@ type Config struct {
 	CookieSecure           bool
 	AppCatalogPath         string
 	AnnouncementsPath      string
+	PortalRequestsPath     string
 	SupportEmail           string
 	DevAuthEnabled         bool
 	AllowedRedirectURIs    map[string]struct{}
@@ -57,6 +58,7 @@ func Load() (Config, error) {
 		CookieSecure:           envBool("COOKIE_SECURE", strings.HasPrefix(appBaseURL, "https://")),
 		AppCatalogPath:         env("APP_CATALOG_PATH", "configs/app-catalog.yaml"),
 		AnnouncementsPath:      env("ANNOUNCEMENTS_PATH", "configs/announcements.yaml"),
+		PortalRequestsPath:     env("PORTAL_REQUESTS_PATH", "data/requests.json"),
 		SupportEmail:           env("SUPPORT_EMAIL", "contact@liteyuki.org"),
 		DevAuthEnabled:         envBool("PORTAL_DEV_AUTH", false),
 		AllowedRedirectURIs:    allowedRedirects,

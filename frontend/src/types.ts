@@ -38,3 +38,39 @@ export type PortalData = {
   applications: AppCatalogItem[];
   announcements: Announcement[];
 };
+
+export type AppRequest = {
+  id: string;
+  requesterSub: string;
+  requesterEmail: string;
+  name: string;
+  type: string;
+  description: string;
+  redirectUris: string[];
+  postLogoutRedirectUris: string[];
+  corsAllowedOrigins: string[];
+  portalUrl: string;
+  reason: string;
+  status: string;
+  logtoApplicationId?: string;
+  reviewerSub?: string;
+  reviewNote?: string;
+  createdAt: string;
+  reviewedAt?: string;
+};
+
+export type PermissionRequest = {
+  id: string;
+  requesterSub: string;
+  requesterEmail: string;
+  kind: string;
+  roleId?: string;
+  roleName?: string;
+  applicationId?: string;
+  reason: string;
+  status: string;
+  reviewerSub?: string;
+  reviewNote?: string;
+  createdAt: string;
+  reviewedAt?: string;
+};

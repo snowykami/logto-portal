@@ -25,6 +25,7 @@ type Dependencies struct {
 	Management    *logto.ManagementClient
 	Catalog       []portal.AppCatalogItem
 	Announcements []portal.Announcement
+	Requests      *portal.RequestStore
 	Static        embed.FS
 }
 
@@ -59,6 +60,10 @@ func NewRouter(deps Dependencies) nethttp.Handler {
 		api.GET("/app-catalog", server.appCatalog)
 		api.GET("/announcements", server.announcements)
 		api.POST("/announcements/:id/read", server.markAnnouncementRead)
+		api.GET("/developer/app-requests", server.listMyAppRequests)
+		api.POST("/developer/app-requests", server.createAppRequest)
+		api.GET("/permission-requests", server.listMyPermissionRequests)
+		api.POST("/permission-requests", server.createPermissionRequest)
 	}
 
 	admin := router.Group("/api/admin")
@@ -67,6 +72,12 @@ func NewRouter(deps Dependencies) nethttp.Handler {
 		admin.GET("/announcements", server.adminAnnouncements)
 		admin.GET("/app-catalog", server.adminAppCatalog)
 		admin.GET("/audit-logs", server.auditLogs)
+		admin.GET("/app-requests", server.adminListAppRequests)
+		admin.POST("/app-requests/:id/approve", server.approveAppRequest)
+		admin.POST("/app-requests/:id/reject", server.rejectAppRequest)
+		admin.GET("/permission-requests", server.adminListPermissionRequests)
+		admin.POST("/permission-requests/:id/approve", server.approvePermissionRequest)
+		admin.POST("/permission-requests/:id/reject", server.rejectPermissionRequest)
 	}
 
 	router.NoRoute(server.spa)
