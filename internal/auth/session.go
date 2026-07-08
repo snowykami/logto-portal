@@ -10,6 +10,7 @@ import (
 
 type Session struct {
 	User         User      `json:"user"`
+	Subject      string    `json:"subject"`
 	AccessToken  string    `json:"-"`
 	IDToken      string    `json:"-"`
 	RefreshToken string    `json:"-"`
@@ -52,6 +53,9 @@ func (m *SessionManager) Create(w http.ResponseWriter, session Session) error {
 		return err
 	}
 	now := time.Now()
+	if session.Subject == "" {
+		session.Subject = session.User.Sub
+	}
 	session.CreatedAt = now
 	session.ExpiresAt = now.Add(m.ttl)
 

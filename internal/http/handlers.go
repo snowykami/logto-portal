@@ -115,14 +115,20 @@ func (s *Server) callback(c *gin.Context) {
 }
 
 func (s *Server) me(c *gin.Context) {
-	session := mustSession(c)
+	user, ok := s.currentUser(c)
+	if !ok {
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{
-		"user": session.User,
+		"user": user,
 	})
 }
 
 func (s *Server) permissions(c *gin.Context) {
-	user := mustSession(c).User
+	user, ok := s.currentUser(c)
+	if !ok {
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"roles":             user.Roles,
 		"organizations":     user.Organizations,
@@ -132,7 +138,10 @@ func (s *Server) permissions(c *gin.Context) {
 }
 
 func (s *Server) appCatalog(c *gin.Context) {
-	user := mustSession(c).User
+	user, ok := s.currentUser(c)
+	if !ok {
+		return
+	}
 	if s.deps.Management == nil {
 		c.JSON(http.StatusOK, gin.H{
 			"applications": []portal.AppCatalogResponseItem{},
@@ -151,7 +160,14 @@ func (s *Server) appCatalog(c *gin.Context) {
 		return
 	}
 
-	catalog := portal.MergeManagedApps(managedApps, s.deps.Catalog)
+	overrides, err := s.loadAppCatalog()
+	if err != nil {
+		s.deps.Logger.Warn("app catalog overlay load failed", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "app_catalog_load_failed"})
+		return
+	}
+
+	catalog := portal.MergeManagedApps(managedApps, overrides)
 	c.JSON(http.StatusOK, gin.H{
 		"applications": portal.FilterApps(catalog, user),
 		"source":       "management",
@@ -159,9 +175,18 @@ func (s *Server) appCatalog(c *gin.Context) {
 }
 
 func (s *Server) announcements(c *gin.Context) {
-	user := mustSession(c).User
+	user, ok := s.currentUser(c)
+	if !ok {
+		return
+	}
+	announcements, err := s.loadAnnouncements()
+	if err != nil {
+		s.deps.Logger.Warn("announcements load failed", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "announcements_load_failed"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{
-		"announcements": portal.FilterAnnouncements(s.deps.Announcements, user, time.Now()),
+		"announcements": portal.FilterAnnouncements(announcements, user, time.Now()),
 	})
 }
 
@@ -173,14 +198,24 @@ func (s *Server) markAnnouncementRead(c *gin.Context) {
 }
 
 func (s *Server) listMyAppRequests(c *gin.Context) {
-	session := mustSession(c)
-	c.JSON(http.StatusOK, gin.H{
-		"requests": s.deps.Requests.ListAppRequests(session.User.Sub),
-	})
+	user, ok := s.currentUser(c)
+	if !ok {
+		return
+	}
+	requests, err := s.deps.Requests.ListAppRequests(user.Sub)
+	if err != nil {
+		s.deps.Logger.Warn("app requests load failed", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "request_store_failed"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"requests": requests})
 }
 
 func (s *Server) createAppRequest(c *gin.Context) {
-	session := mustSession(c)
+	user, ok := s.currentUser(c)
+	if !ok {
+		return
+	}
 	var request struct {
 		Name                   string   `json:"name"`
 		Type                   string   `json:"type"`
@@ -216,8 +251,8 @@ func (s *Server) createAppRequest(c *gin.Context) {
 	}
 
 	created, err := s.deps.Requests.CreateAppRequest(portal.AppRequest{
-		RequesterSub:           session.User.Sub,
-		RequesterEmail:         session.User.Email,
+		RequesterSub:           user.Sub,
+		RequesterEmail:         user.Email,
 		Name:                   request.Name,
 		Type:                   request.Type,
 		Description:            strings.TrimSpace(request.Description),
@@ -236,14 +271,24 @@ func (s *Server) createAppRequest(c *gin.Context) {
 }
 
 func (s *Server) listMyPermissionRequests(c *gin.Context) {
-	session := mustSession(c)
-	c.JSON(http.StatusOK, gin.H{
-		"requests": s.deps.Requests.ListPermissionRequests(session.User.Sub),
-	})
+	user, ok := s.currentUser(c)
+	if !ok {
+		return
+	}
+	requests, err := s.deps.Requests.ListPermissionRequests(user.Sub)
+	if err != nil {
+		s.deps.Logger.Warn("permission requests load failed", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "request_store_failed"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"requests": requests})
 }
 
 func (s *Server) createPermissionRequest(c *gin.Context) {
-	session := mustSession(c)
+	user, ok := s.currentUser(c)
+	if !ok {
+		return
+	}
 	var request struct {
 		Kind          string `json:"kind"`
 		RoleID        string `json:"roleId"`
@@ -267,8 +312,8 @@ func (s *Server) createPermissionRequest(c *gin.Context) {
 	}
 
 	created, err := s.deps.Requests.CreatePermissionRequest(portal.PermissionRequest{
-		RequesterSub:   session.User.Sub,
-		RequesterEmail: session.User.Email,
+		RequesterSub:   user.Sub,
+		RequesterEmail: user.Email,
 		Kind:           request.Kind,
 		RoleID:         request.RoleID,
 		RoleName:       request.RoleName,
@@ -285,6 +330,7 @@ func (s *Server) createPermissionRequest(c *gin.Context) {
 
 func (s *Server) updateProfile(c *gin.Context) {
 	session := mustSession(c)
+	subject := sessionSubject(session)
 	if s.deps.Management == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"error":   "management_api_not_configured",
@@ -308,13 +354,18 @@ func (s *Server) updateProfile(c *gin.Context) {
 		Username: request.PreferredUsername,
 		Avatar:   request.Picture,
 	}
-	result, err := s.deps.Management.UpdateUser(c.Request.Context(), session.User.Sub, update)
+	result, err := s.deps.Management.UpdateUser(c.Request.Context(), subject, update)
 	if err != nil {
 		s.deps.Logger.Warn("profile update failed", "error", err)
 		c.JSON(http.StatusBadGateway, gin.H{"error": "management_api_failed"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"profile": result})
+
+	user, ok := s.currentUser(c)
+	if !ok {
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"profile": result, "user": user})
 }
 
 func (s *Server) authorizedApplications(c *gin.Context) {
@@ -367,29 +418,61 @@ func (s *Server) logoutGlobal(c *gin.Context) {
 }
 
 func (s *Server) adminAnnouncements(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"announcements": s.deps.Announcements})
+	announcements, err := s.loadAnnouncements()
+	if err != nil {
+		s.deps.Logger.Warn("announcements load failed", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "announcements_load_failed"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"announcements": announcements})
 }
 
 func (s *Server) adminAppCatalog(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"applications": s.deps.Catalog})
+	catalog, err := s.loadAppCatalog()
+	if err != nil {
+		s.deps.Logger.Warn("app catalog overlay load failed", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "app_catalog_load_failed"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"applications": catalog})
 }
 
 func (s *Server) auditLogs(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"auditLogs": s.deps.Requests.ListAuditLogs()})
+	logs, err := s.deps.Requests.ListAuditLogs()
+	if err != nil {
+		s.deps.Logger.Warn("audit logs load failed", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "request_store_failed"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"auditLogs": logs})
 }
 
 func (s *Server) adminListAppRequests(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"requests": s.deps.Requests.ListAppRequests("")})
+	requests, err := s.deps.Requests.ListAppRequests("")
+	if err != nil {
+		s.deps.Logger.Warn("app requests load failed", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "request_store_failed"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"requests": requests})
 }
 
 func (s *Server) approveAppRequest(c *gin.Context) {
-	session := mustSession(c)
+	user, ok := s.currentUser(c)
+	if !ok {
+		return
+	}
 	if s.deps.Management == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "management_api_not_configured"})
 		return
 	}
 
-	request, ok := s.deps.Requests.GetAppRequest(c.Param("id"))
+	request, ok, err := s.deps.Requests.GetAppRequest(c.Param("id"))
+	if err != nil {
+		s.deps.Logger.Warn("app request load failed", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "request_store_failed"})
+		return
+	}
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "request_not_found"})
 		return
@@ -424,14 +507,14 @@ func (s *Server) approveAppRequest(c *gin.Context) {
 	}
 	appID, _ := createdApp["id"].(string)
 	reviewNote := reviewNote(c)
-	reviewed, err := s.deps.Requests.ReviewAppRequest(c.Param("id"), portal.RequestStatusApproved, session.User.Sub, reviewNote, appID)
+	reviewed, err := s.deps.Requests.ReviewAppRequest(c.Param("id"), portal.RequestStatusApproved, user.Sub, reviewNote, appID)
 	if err != nil {
 		s.deps.Logger.Warn("app request review store failed", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "request_store_failed"})
 		return
 	}
 	_, _ = s.deps.Requests.AppendAuditLog(portal.AuditLog{
-		ActorSub:   session.User.Sub,
+		ActorSub:   user.Sub,
 		Action:     "approve_app_request",
 		TargetType: "app_request",
 		TargetID:   reviewed.ID,
@@ -444,8 +527,11 @@ func (s *Server) approveAppRequest(c *gin.Context) {
 }
 
 func (s *Server) rejectAppRequest(c *gin.Context) {
-	session := mustSession(c)
-	reviewed, err := s.deps.Requests.ReviewAppRequest(c.Param("id"), portal.RequestStatusRejected, session.User.Sub, reviewNote(c), "")
+	user, ok := s.currentUser(c)
+	if !ok {
+		return
+	}
+	reviewed, err := s.deps.Requests.ReviewAppRequest(c.Param("id"), portal.RequestStatusRejected, user.Sub, reviewNote(c), "")
 	if errors.Is(err, portal.ErrRequestNotPending) {
 		c.JSON(http.StatusConflict, gin.H{"error": "request_is_not_pending"})
 		return
@@ -455,7 +541,7 @@ func (s *Server) rejectAppRequest(c *gin.Context) {
 		return
 	}
 	_, _ = s.deps.Requests.AppendAuditLog(portal.AuditLog{
-		ActorSub:   session.User.Sub,
+		ActorSub:   user.Sub,
 		Action:     "reject_app_request",
 		TargetType: "app_request",
 		TargetID:   reviewed.ID,
@@ -467,17 +553,31 @@ func (s *Server) rejectAppRequest(c *gin.Context) {
 }
 
 func (s *Server) adminListPermissionRequests(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"requests": s.deps.Requests.ListPermissionRequests("")})
+	requests, err := s.deps.Requests.ListPermissionRequests("")
+	if err != nil {
+		s.deps.Logger.Warn("permission requests load failed", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "request_store_failed"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"requests": requests})
 }
 
 func (s *Server) approvePermissionRequest(c *gin.Context) {
-	session := mustSession(c)
+	user, ok := s.currentUser(c)
+	if !ok {
+		return
+	}
 	if s.deps.Management == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "management_api_not_configured"})
 		return
 	}
 
-	request, ok := s.deps.Requests.GetPermissionRequest(c.Param("id"))
+	request, ok, err := s.deps.Requests.GetPermissionRequest(c.Param("id"))
+	if err != nil {
+		s.deps.Logger.Warn("permission request load failed", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "request_store_failed"})
+		return
+	}
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "request_not_found"})
 		return
@@ -501,13 +601,13 @@ func (s *Server) approvePermissionRequest(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "management_api_failed"})
 		return
 	}
-	reviewed, err := s.deps.Requests.ReviewPermissionRequest(c.Param("id"), portal.RequestStatusApproved, session.User.Sub, reviewNote(c))
+	reviewed, err := s.deps.Requests.ReviewPermissionRequest(c.Param("id"), portal.RequestStatusApproved, user.Sub, reviewNote(c))
 	if err != nil {
 		c.JSON(statusForStoreError(err), gin.H{"error": "request_review_failed"})
 		return
 	}
 	_, _ = s.deps.Requests.AppendAuditLog(portal.AuditLog{
-		ActorSub:   session.User.Sub,
+		ActorSub:   user.Sub,
 		Action:     "approve_permission_request",
 		TargetType: "permission_request",
 		TargetID:   reviewed.ID,
@@ -521,14 +621,17 @@ func (s *Server) approvePermissionRequest(c *gin.Context) {
 }
 
 func (s *Server) rejectPermissionRequest(c *gin.Context) {
-	session := mustSession(c)
-	reviewed, err := s.deps.Requests.ReviewPermissionRequest(c.Param("id"), portal.RequestStatusRejected, session.User.Sub, reviewNote(c))
+	user, ok := s.currentUser(c)
+	if !ok {
+		return
+	}
+	reviewed, err := s.deps.Requests.ReviewPermissionRequest(c.Param("id"), portal.RequestStatusRejected, user.Sub, reviewNote(c))
 	if err != nil {
 		c.JSON(statusForStoreError(err), gin.H{"error": "request_review_failed"})
 		return
 	}
 	_, _ = s.deps.Requests.AppendAuditLog(portal.AuditLog{
-		ActorSub:   session.User.Sub,
+		ActorSub:   user.Sub,
 		Action:     "reject_permission_request",
 		TargetType: "permission_request",
 		TargetID:   reviewed.ID,
@@ -556,8 +659,12 @@ func (s *Server) requireSession(c *gin.Context) {
 }
 
 func (s *Server) requireAdmin(c *gin.Context) {
-	session := mustSession(c)
-	if !hasRole(session.User, "liteyuki-account-admin") {
+	user, ok := s.currentUser(c)
+	if !ok {
+		c.Abort()
+		return
+	}
+	if !hasRole(user, "liteyuki-account-admin") {
 		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
 		c.Abort()
 		return
@@ -586,6 +693,98 @@ func mustSession(c *gin.Context) auth.Session {
 	}
 	session, _ := value.(auth.Session)
 	return session
+}
+
+func (s *Server) currentUser(c *gin.Context) (auth.User, bool) {
+	session := mustSession(c)
+	subject := sessionSubject(session)
+	if s.deps.Management == nil {
+		if s.deps.Config.DevAuthEnabled {
+			return session.User, true
+		}
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "management_api_not_configured"})
+		return auth.User{}, false
+	}
+
+	managedUser, err := s.deps.Management.GetUser(c.Request.Context(), subject)
+	if err != nil {
+		s.deps.Logger.Warn("management user fetch failed", "error", err)
+		c.JSON(http.StatusBadGateway, gin.H{"error": "management_api_failed"})
+		return auth.User{}, false
+	}
+
+	roles, err := s.deps.Management.ListUserRoles(c.Request.Context(), subject)
+	if err != nil {
+		s.deps.Logger.Warn("management user roles fetch failed", "error", err)
+		c.JSON(http.StatusBadGateway, gin.H{"error": "management_api_failed"})
+		return auth.User{}, false
+	}
+
+	organizations, err := s.deps.Management.ListUserOrganizations(c.Request.Context(), subject)
+	if err != nil {
+		s.deps.Logger.Warn("management user organizations fetch failed", "error", err)
+		c.JSON(http.StatusBadGateway, gin.H{"error": "management_api_failed"})
+		return auth.User{}, false
+	}
+
+	return userFromManagement(managedUser, roles, organizations), true
+}
+
+func sessionSubject(session auth.Session) string {
+	if session.Subject != "" {
+		return session.Subject
+	}
+	return session.User.Sub
+}
+
+func (s *Server) loadAppCatalog() ([]portal.AppCatalogItem, error) {
+	return portal.LoadAppCatalog(s.deps.Config.AppCatalogPath)
+}
+
+func (s *Server) loadAnnouncements() ([]portal.Announcement, error) {
+	return portal.LoadAnnouncements(s.deps.Config.AnnouncementsPath)
+}
+
+func userFromManagement(user logto.ManagementUser, roles []logto.ManagementRole, organizations []logto.ManagementOrganization) auth.User {
+	result := auth.User{
+		Sub:               user.ID,
+		Email:             user.PrimaryEmail,
+		Name:              user.Name,
+		PreferredUsername: user.Username,
+		Picture:           user.Avatar,
+		Roles:             make([]string, 0, len(roles)),
+		Organizations:     make([]string, 0, len(organizations)*2),
+		OrganizationRoles: []string{},
+	}
+
+	if result.PreferredUsername == "" {
+		result.PreferredUsername = stringMapValue(user.Profile, "preferredUsername")
+	}
+	for _, role := range roles {
+		if role.Name != "" {
+			result.Roles = append(result.Roles, role.Name)
+		}
+	}
+	for _, organization := range organizations {
+		if organization.ID != "" {
+			result.Organizations = append(result.Organizations, organization.ID)
+		}
+		if organization.Name != "" && organization.Name != organization.ID {
+			result.Organizations = append(result.Organizations, organization.Name)
+		}
+		for _, role := range organization.OrganizationRoles {
+			if role.Name == "" {
+				continue
+			}
+			if organization.ID != "" {
+				result.OrganizationRoles = append(result.OrganizationRoles, organization.ID+":"+role.Name)
+			}
+			if organization.Name != "" && organization.Name != organization.ID {
+				result.OrganizationRoles = append(result.OrganizationRoles, organization.Name+":"+role.Name)
+			}
+		}
+	}
+	return result
 }
 
 func hasRole(user auth.User, role string) bool {
@@ -653,4 +852,9 @@ func cleanStrings(values []string) []string {
 		}
 	}
 	return result
+}
+
+func stringMapValue(values map[string]any, key string) string {
+	value, _ := values[key].(string)
+	return value
 }

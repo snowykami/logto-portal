@@ -27,18 +27,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	catalog, err := portal.LoadAppCatalog(cfg.AppCatalogPath)
-	if err != nil {
-		logger.Error("failed to load app catalog", "error", err)
-		os.Exit(1)
-	}
-
-	announcements, err := portal.LoadAnnouncements(cfg.AnnouncementsPath)
-	if err != nil {
-		logger.Error("failed to load announcements", "error", err)
-		os.Exit(1)
-	}
-
 	requestStore, err := portal.NewRequestStore(cfg.PortalRequestsPath)
 	if err != nil {
 		logger.Error("failed to load portal requests", "error", err)
@@ -74,17 +62,15 @@ func main() {
 		logger.Warn("Logto Management API is not configured; profile updates are disabled")
 	}
 	router := portalhttp.NewRouter(portalhttp.Dependencies{
-		Config:        cfg,
-		Logger:        logger,
-		Session:       sessionManager,
-		State:         stateStore,
-		OIDC:          oidcClient,
-		Account:       accountClient,
-		Management:    managementClient,
-		Catalog:       catalog,
-		Announcements: announcements,
-		Requests:      requestStore,
-		Static:        static.FS(),
+		Config:     cfg,
+		Logger:     logger,
+		Session:    sessionManager,
+		State:      stateStore,
+		OIDC:       oidcClient,
+		Account:    accountClient,
+		Management: managementClient,
+		Requests:   requestStore,
+		Static:     static.FS(),
 	})
 
 	server := &http.Server{

@@ -16,17 +16,15 @@ import (
 )
 
 type Dependencies struct {
-	Config        config.Config
-	Logger        *slog.Logger
-	Session       *auth.SessionManager
-	State         *auth.StateStore
-	OIDC          *auth.OIDCClient
-	Account       *logto.AccountClient
-	Management    *logto.ManagementClient
-	Catalog       []portal.AppCatalogItem
-	Announcements []portal.Announcement
-	Requests      *portal.RequestStore
-	Static        embed.FS
+	Config     config.Config
+	Logger     *slog.Logger
+	Session    *auth.SessionManager
+	State      *auth.StateStore
+	OIDC       *auth.OIDCClient
+	Account    *logto.AccountClient
+	Management *logto.ManagementClient
+	Requests   *portal.RequestStore
+	Static     embed.FS
 }
 
 type Server struct {

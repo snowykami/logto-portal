@@ -90,6 +90,10 @@ func (s *RequestStore) CreateAppRequest(request AppRequest) (AppRequest, error) 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if err := s.loadLocked(); err != nil {
+		return AppRequest{}, err
+	}
+
 	request.ID = newRequestID("app")
 	request.Status = RequestStatusPending
 	request.CreatedAt = time.Now()
@@ -97,9 +101,13 @@ func (s *RequestStore) CreateAppRequest(request AppRequest) (AppRequest, error) 
 	return request, s.saveLocked()
 }
 
-func (s *RequestStore) ListAppRequests(requesterSub string) []AppRequest {
+func (s *RequestStore) ListAppRequests(requesterSub string) ([]AppRequest, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if err := s.loadLocked(); err != nil {
+		return nil, err
+	}
 
 	result := []AppRequest{}
 	for _, request := range s.data.AppRequests {
@@ -110,24 +118,32 @@ func (s *RequestStore) ListAppRequests(requesterSub string) []AppRequest {
 	slices.SortFunc(result, func(a, b AppRequest) int {
 		return b.CreatedAt.Compare(a.CreatedAt)
 	})
-	return result
+	return result, nil
 }
 
-func (s *RequestStore) GetAppRequest(id string) (AppRequest, bool) {
+func (s *RequestStore) GetAppRequest(id string) (AppRequest, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if err := s.loadLocked(); err != nil {
+		return AppRequest{}, false, err
+	}
+
 	for _, request := range s.data.AppRequests {
 		if request.ID == id {
-			return request, true
+			return request, true, nil
 		}
 	}
-	return AppRequest{}, false
+	return AppRequest{}, false, nil
 }
 
 func (s *RequestStore) ReviewAppRequest(id string, status string, reviewerSub string, note string, logtoApplicationID string) (AppRequest, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if err := s.loadLocked(); err != nil {
+		return AppRequest{}, err
+	}
 
 	for index := range s.data.AppRequests {
 		if s.data.AppRequests[index].ID != id {
@@ -151,6 +167,10 @@ func (s *RequestStore) CreatePermissionRequest(request PermissionRequest) (Permi
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if err := s.loadLocked(); err != nil {
+		return PermissionRequest{}, err
+	}
+
 	request.ID = newRequestID("perm")
 	request.Status = RequestStatusPending
 	request.CreatedAt = time.Now()
@@ -158,9 +178,13 @@ func (s *RequestStore) CreatePermissionRequest(request PermissionRequest) (Permi
 	return request, s.saveLocked()
 }
 
-func (s *RequestStore) ListPermissionRequests(requesterSub string) []PermissionRequest {
+func (s *RequestStore) ListPermissionRequests(requesterSub string) ([]PermissionRequest, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if err := s.loadLocked(); err != nil {
+		return nil, err
+	}
 
 	result := []PermissionRequest{}
 	for _, request := range s.data.PermissionRequests {
@@ -171,24 +195,32 @@ func (s *RequestStore) ListPermissionRequests(requesterSub string) []PermissionR
 	slices.SortFunc(result, func(a, b PermissionRequest) int {
 		return b.CreatedAt.Compare(a.CreatedAt)
 	})
-	return result
+	return result, nil
 }
 
-func (s *RequestStore) GetPermissionRequest(id string) (PermissionRequest, bool) {
+func (s *RequestStore) GetPermissionRequest(id string) (PermissionRequest, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if err := s.loadLocked(); err != nil {
+		return PermissionRequest{}, false, err
+	}
+
 	for _, request := range s.data.PermissionRequests {
 		if request.ID == id {
-			return request, true
+			return request, true, nil
 		}
 	}
-	return PermissionRequest{}, false
+	return PermissionRequest{}, false, nil
 }
 
 func (s *RequestStore) ReviewPermissionRequest(id string, status string, reviewerSub string, note string) (PermissionRequest, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if err := s.loadLocked(); err != nil {
+		return PermissionRequest{}, err
+	}
 
 	for index := range s.data.PermissionRequests {
 		if s.data.PermissionRequests[index].ID != id {
@@ -211,38 +243,60 @@ func (s *RequestStore) AppendAuditLog(log AuditLog) (AuditLog, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if err := s.loadLocked(); err != nil {
+		return AuditLog{}, err
+	}
+
 	log.ID = newRequestID("audit")
 	log.CreatedAt = time.Now()
 	s.data.AuditLogs = append(s.data.AuditLogs, log)
 	return log, s.saveLocked()
 }
 
-func (s *RequestStore) ListAuditLogs() []AuditLog {
+func (s *RequestStore) ListAuditLogs() ([]AuditLog, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if err := s.loadLocked(); err != nil {
+		return nil, err
+	}
 
 	result := slices.Clone(s.data.AuditLogs)
 	slices.SortFunc(result, func(a, b AuditLog) int {
 		return b.CreatedAt.Compare(a.CreatedAt)
 	})
-	return result
+	return result, nil
 }
 
 func (s *RequestStore) load() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.loadLocked()
+}
+
+func (s *RequestStore) loadLocked() error {
 	if s.path == "" {
 		return nil
 	}
 	data, err := os.ReadFile(s.path)
 	if errors.Is(err, os.ErrNotExist) {
+		s.data = requestStoreData{}
 		return nil
 	}
 	if err != nil {
 		return err
 	}
 	if len(data) == 0 {
+		s.data = requestStoreData{}
 		return nil
 	}
-	return json.Unmarshal(data, &s.data)
+	var dataStore requestStoreData
+	if err := json.Unmarshal(data, &dataStore); err != nil {
+		return err
+	}
+	s.data = dataStore
+	return nil
 }
 
 func (s *RequestStore) saveLocked() error {

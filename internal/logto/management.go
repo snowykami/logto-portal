@@ -43,6 +43,16 @@ type ManagementProfileUpdate struct {
 	Avatar   *string `json:"avatar,omitempty"`
 }
 
+type ManagementUser struct {
+	ID           string         `json:"id"`
+	Username     string         `json:"username"`
+	PrimaryEmail string         `json:"primaryEmail"`
+	Name         string         `json:"name"`
+	Avatar       string         `json:"avatar"`
+	Profile      map[string]any `json:"profile"`
+	CustomData   map[string]any `json:"customData"`
+}
+
 type ManagementApplication struct {
 	ID                   string                 `json:"id"`
 	Name                 string                 `json:"name"`
@@ -74,6 +84,18 @@ type ManagementRole struct {
 	Type        string `json:"type"`
 }
 
+type ManagementOrganization struct {
+	ID                string                  `json:"id"`
+	Name              string                  `json:"name"`
+	Description       string                  `json:"description"`
+	OrganizationRoles []ManagementRoleSummary `json:"organizationRoles"`
+}
+
+type ManagementRoleSummary struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
 func NewManagementClient(cfg ManagementConfig) *ManagementClient {
 	return &ManagementClient{
 		apiBaseURL:   strings.TrimRight(cfg.APIBaseURL, "/"),
@@ -84,6 +106,24 @@ func NewManagementClient(cfg ManagementConfig) *ManagementClient {
 		scope:        cfg.Scope,
 		client:       &http.Client{Timeout: 10 * time.Second},
 	}
+}
+
+func (c *ManagementClient) GetUser(ctx context.Context, userID string) (ManagementUser, error) {
+	token, err := c.token(ctx)
+	if err != nil {
+		return ManagementUser{}, err
+	}
+
+	data, err := c.doRawJSON(ctx, http.MethodGet, "/api/users/"+url.PathEscape(userID), token, nil)
+	if err != nil {
+		return ManagementUser{}, err
+	}
+
+	var user ManagementUser
+	if err := json.Unmarshal(data, &user); err != nil {
+		return ManagementUser{}, err
+	}
+	return user, nil
 }
 
 func (c *ManagementClient) UpdateUser(ctx context.Context, userID string, update ManagementProfileUpdate) (map[string]any, error) {
@@ -133,6 +173,32 @@ func (c *ManagementClient) ListApplications(ctx context.Context) ([]ManagementAp
 	return apps, nil
 }
 
+func (c *ManagementClient) ListUserRoles(ctx context.Context, userID string) ([]ManagementRole, error) {
+	token, err := c.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := c.doRawJSON(ctx, http.MethodGet, "/api/users/"+url.PathEscape(userID)+"/roles", token, nil)
+	if err != nil {
+		return nil, err
+	}
+	return decodeList[ManagementRole](data)
+}
+
+func (c *ManagementClient) ListUserOrganizations(ctx context.Context, userID string) ([]ManagementOrganization, error) {
+	token, err := c.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := c.doRawJSON(ctx, http.MethodGet, "/api/users/"+url.PathEscape(userID)+"/organizations", token, nil)
+	if err != nil {
+		return nil, err
+	}
+	return decodeList[ManagementOrganization](data)
+}
+
 func (c *ManagementClient) ListRoles(ctx context.Context) ([]ManagementRole, error) {
 	token, err := c.token(ctx)
 	if err != nil {
@@ -144,18 +210,7 @@ func (c *ManagementClient) ListRoles(ctx context.Context) ([]ManagementRole, err
 		return nil, err
 	}
 
-	var direct []ManagementRole
-	if err := json.Unmarshal(data, &direct); err == nil {
-		return direct, nil
-	}
-
-	var wrapped struct {
-		Data []ManagementRole `json:"data"`
-	}
-	if err := json.Unmarshal(data, &wrapped); err != nil {
-		return nil, err
-	}
-	return wrapped.Data, nil
+	return decodeList[ManagementRole](data)
 }
 
 func (c *ManagementClient) AssignRolesToUser(ctx context.Context, userID string, roleIDs []string) error {
@@ -277,13 +332,17 @@ func (c *ManagementClient) doRawJSON(ctx context.Context, method, path, accessTo
 }
 
 func decodeApplications(data []byte) ([]ManagementApplication, error) {
-	var direct []ManagementApplication
+	return decodeList[ManagementApplication](data)
+}
+
+func decodeList[T any](data []byte) ([]T, error) {
+	var direct []T
 	if err := json.Unmarshal(data, &direct); err == nil {
 		return direct, nil
 	}
 
 	var wrapped struct {
-		Data []ManagementApplication `json:"data"`
+		Data []T `json:"data"`
 	}
 	if err := json.Unmarshal(data, &wrapped); err != nil {
 		return nil, err

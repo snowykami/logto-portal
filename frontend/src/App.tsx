@@ -247,7 +247,7 @@ function Dashboard({ data, navigate }: { data: PortalData; navigate: (page: Page
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="truncate text-xl font-semibold">{displayName(data.user)}</h2>
-                {data.user.emailVerified && <Badge tone="ok">邮箱已验证</Badge>}
+                {data.user.email && <Badge tone="ok">邮箱已绑定</Badge>}
               </div>
               <p className="mt-1 truncate text-sm text-muted-foreground">{data.user.email || data.user.sub}</p>
             </div>
@@ -273,7 +273,7 @@ function Dashboard({ data, navigate }: { data: PortalData; navigate: (page: Page
         <Card className="p-5">
           <SectionTitle title="账号安全" />
           <div className="mt-4 space-y-3 text-sm">
-            <StatusLine ok={data.user.emailVerified} label="邮箱验证状态" />
+            <StatusLine ok={Boolean(data.user.email)} label="邮箱绑定状态" />
             <StatusLine ok={data.user.roles.length > 0} label="基础角色授权" />
             <StatusLine ok={data.user.sub.length > 0} label="Logto sub 标识" />
           </div>
@@ -298,11 +298,17 @@ function Profile({ user, reload }: { user: User; reload: () => Promise<void> }) 
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
+  useEffect(() => {
+    setName(user.name);
+    setUsername(user.preferredUsername);
+    setPicture(user.picture);
+  }, [user.name, user.picture, user.preferredUsername]);
+
   async function submit(event: FormEvent) {
     event.preventDefault();
     const confirmed = await confirm({
       title: '确认修改资料',
-      description: '昵称、用户名和头像会通过后端提交到 Logto Management API，并更新当前账号资料。',
+      description: '显示名称、用户名和头像会通过后端提交到 Logto Management API，并更新当前账号资料。',
       confirmText: '提交修改',
     });
     if (!confirmed) {
@@ -332,7 +338,7 @@ function Profile({ user, reload }: { user: User; reload: () => Promise<void> }) 
     <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
       <Card className="p-5">
         <form className="space-y-4" onSubmit={(event) => void submit(event)}>
-          <Field label="昵称">
+          <Field label="显示名称">
             <Input value={name} onChange={(event) => setName(event.target.value)} />
           </Field>
           <Field label="用户名">

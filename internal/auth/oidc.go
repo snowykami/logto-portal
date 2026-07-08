@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -74,23 +73,13 @@ func (c *OIDCClient) Exchange(ctx context.Context, code string, expectedNonce st
 		return Session{}, err
 	}
 
-	user := User{
-		Sub:               stringClaim(claims, "sub"),
-		Email:             stringClaim(claims, "email"),
-		EmailVerified:     boolClaim(claims, "email_verified"),
-		Name:              stringClaim(claims, "name"),
-		PreferredUsername: stringClaim(claims, "preferred_username"),
-		Picture:           stringClaim(claims, "picture"),
-		Roles:             stringSliceClaim(claims, "roles"),
-		Organizations:     stringSliceClaim(claims, "organizations"),
-		OrganizationRoles: stringSliceClaim(claims, "organization_roles"),
-	}
-	if user.Sub == "" {
+	subject := stringClaim(claims, "sub")
+	if subject == "" {
 		return Session{}, errors.New("missing sub claim")
 	}
 
 	return Session{
-		User:         user,
+		Subject:      subject,
 		AccessToken:  token.AccessToken,
 		IDToken:      rawIDToken,
 		RefreshToken: token.RefreshToken,
@@ -100,41 +89,4 @@ func (c *OIDCClient) Exchange(ctx context.Context, code string, expectedNonce st
 func stringClaim(claims map[string]any, key string) string {
 	value, _ := claims[key].(string)
 	return value
-}
-
-func boolClaim(claims map[string]any, key string) bool {
-	value, _ := claims[key].(bool)
-	return value
-}
-
-func stringSliceClaim(claims map[string]any, key string) []string {
-	value, ok := claims[key]
-	if !ok || value == nil {
-		return []string{}
-	}
-
-	switch typed := value.(type) {
-	case []string:
-		return typed
-	case []any:
-		result := make([]string, 0, len(typed))
-		for _, item := range typed {
-			if text, ok := item.(string); ok {
-				result = append(result, text)
-			}
-		}
-		return result
-	case string:
-		return []string{typed}
-	default:
-		bytes, err := json.Marshal(typed)
-		if err != nil {
-			return []string{}
-		}
-		var result []string
-		if err := json.Unmarshal(bytes, &result); err != nil {
-			return []string{}
-		}
-		return result
-	}
 }
